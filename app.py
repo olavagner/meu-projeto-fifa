@@ -12,6 +12,7 @@ import logging
 from typing import Optional
 import time
 from collections import defaultdict
+import pytz
 
 # Configuração de Logs
 logging.basicConfig(level=logging.INFO)
@@ -598,6 +599,18 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
             sugestao_ht = sugerir_over_ht(gols_ht_media_confronto)
             sugestao_ft = sugerir_over_ft(gols_ft_media_confronto)
 
+            # --- Nova lógica para "Over Mandante" e "Over Visitante" ---
+            def get_over_text(player_name: str, avg_goals: float) -> str:
+                if 2.30 <= avg_goals <= 3.39:
+                    return f"{player_name}  1.5 Gols"
+                elif 3.40 <= avg_goals <= 4.50:
+                    return f"{player_name}  2.5 Gols"
+                return "Instável" # Or an empty string if you prefer no output for other ranges
+
+            over_mandante_text = get_over_text(m, gp_calc)
+            over_visitante_text = get_over_text(v, gc_calc)
+            # --- Fim da nova lógica ---
+
             stats_rows.append(
                 {
                     "J1": jm,
@@ -608,6 +621,8 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
                     "Gols FT": gols_ft_media_confronto,
                     "Sugestão HT": sugestao_ht,
                     "Sugestão FT": sugestao_ft,
+                    "Over Mandante": over_mandante_text, # Adicionado
+                    "Over Visitante": over_visitante_text, # Adicionado
                     "0.5 HT": format_stats(sm["over_05_ht"], jm, sv["over_05_ht"], jv),
                     "1.5 HT": format_stats(sm["over_15_ht"], jm, sv["over_15_ht"], jv),
                     "2.5 HT": format_stats(sm["over_25_ht"], jm, sv["over_25_ht"], jv),
@@ -635,7 +650,9 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
         df_display["GC"] = df_display["GC"].apply(lambda x: f"{x:.2f}")
 
         colunas_ao_vivo_solicitadas = [
-            "Hora", "Liga", "Mandante", "Visitante", "GP", "GC", "Sugestão HT", "Sugestão FT"
+            "Hora", "Liga", "Mandante", "Visitante", "GP", "GC",
+            "Over Mandante", "Over Visitante", # Adicionadas ao display
+            "Sugestão HT", "Sugestão FT"
         ]
 
         return df_clean, df_display[colunas_ao_vivo_solicitadas]
@@ -755,488 +772,489 @@ def get_logo_path(league_name: str) -> str:
         "Battle 8 Min": "https://i.imgur.com/65W1s9k.png",  # Esports Battle
         "GT 12 Min": "https://i.imgur.com/65W1s9k.png",  # GT Leagues
         "Volta 6 Min": "https://i.imgur.com/65W1s9k.png",  # Volta Football
-        "H2H 8 Min": "https://i.imgur.com/65W1s9k.png",  # H2H Global Gaming League
+        "H2H 8 Min": "https://i.imgur.com/65W1s9k.png",  # Exemplo de URL para H2H 8 Min
     }
-    return logo_map.get(league_name, "https://i.imgur.com/neR5gSO.png")  # Logo padrão
+    return logo_map.get(league_name, "https://i.imgur.com/placeholder.png") # Retorna um placeholder se a liga não for encontrada
+
 
 def exibir_radar_fifa(df_radar: pd.DataFrame) -> None:
-    """Exibe a tabela do Radar FIFA com formatação customizada."""
+    """Exibe a tabela do radar FIFA com porcentagens de Over e BTTS."""
     if df_radar.empty:
-        st.info("🔍 Nenhum dado de Radar FIFA encontrado. Verifique os dados 'Ao Vivo' e 'Resultados'.")
+        st.info("🔍 Nenhum dado de radar encontrado.")
         return
 
-    st.markdown("### 📡 Aqui voce encontra o melhor padrão no HT & FT de cada liga")
+    # Adicionar o logo na coluna da Liga
+    df_radar_display = df_radar.copy()
+    df_radar_display["Liga"] = df_radar_display["Liga"].apply(
+        lambda x: f'<div style="display: flex; align-items: center;">'
+                  f'<img src="{get_logo_path(x)}" width="20" style="margin-right: 5px;"> {x}'
+                  f'</div>'
+    )
 
-    # CSS para estilização das tabelas de Radar e Ranking
+    # Função para aplicar a cor aos percentuais
+    def format_percentage_with_color(val):
+        if isinstance(val, str) and '%' in val:
+            color = get_color_for_percentage(val)
+            return f'<span style="color:{color};"><b>{val}</b></span>'
+        return val
+
+    # Aplica a formatação de cor a todas as colunas de percentual
+    for col in df_radar_display.columns:
+        if col != "Liga":
+            df_radar_display[col] = df_radar_display[col].apply(format_percentage_with_color)
+
+    st.markdown(
+        df_radar_display.to_html(escape=False, index=False),
+        unsafe_allow_html=True
+    )
     st.markdown(
         """
         <style>
-        .radar-table-container, .ranking-table-container {
-            background-color: #262730;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 8px 25px rgba(0,0,0,0.4);
-            margin-bottom: 20px;
-            margin-top: 20px;
+        /* Estilos para o tema escuro */
+        body {
+            background-color: #0e1117; /* Fundo escuro */
+            color: #fafafa; /* Cor do texto principal */
         }
-        .radar-header, .ranking-header {
-            color: #E0E0E0;
-            text-align: center;
-            margin-bottom: 15px;
-            font-size: 1.8em;
-            font-weight: bold;
+        .stMarkdown {
+            color: #fafafa; /* Garante que o Markdown tenha cor clara */
         }
-        table {
+        h1, h2, h3, h4, h5, h6 {
+            color: #e0e0e0; /* Títulos um pouco mais claros para contraste */
+        }
+        /* Estilo da tabela do radar */
+        .dataframe {
             width: 100%;
             border-collapse: collapse;
-            margin: 0;
-            padding: 0;
-            color: #E0E0E0;
-        }
-        th, td {
-            padding: 10px 15px;
-            text-align: center;
-            border-bottom: 1px solid #3a3b40;
-        }
-        th {
-            background-color: #3a3b40;
             font-size: 0.9em;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: #b0b0b0;
+            text-align: center;
+            color: #e0e0e0; /* Cor do texto da tabela */
         }
-        tr:hover {
-            background-color: #2d2e36;
+        .dataframe th {
+            background-color: #262626; /* Fundo do cabeçalho da tabela mais escuro */
+            padding: 10px;
+            border: 1px solid #333; /* Borda mais escura */
+            color: #f0f0f0; /* Cor do texto do cabeçalho */
         }
-        .stDataFrame {
-            width: 100% !important;
-            max-height: 500px; /* Adjust as needed */
-            overflow: auto;
+        .dataframe td {
+            padding: 8px;
+            border: 1px solid #333; /* Borda mais escura */
+            vertical-align: middle;
+            background-color: #1a1a1a; /* Fundo das células da tabela */
         }
-        .stDataFrame > div > div > div > div > div {
-            padding: 0px !important; /* Remove internal padding */
+        .dataframe tr:nth-child(even) {
+            background-color: #1a1a1a; /* Fundo de linhas pares */
         }
-        .stDataFrame table {
-            width: 100%; /* Ensure table takes full width */
+        .dataframe tr:nth-child(odd) {
+            background-color: #212121; /* Fundo de linhas ímpares para contraste */
         }
-        .dataframe tbody tr th {
-            display: none; /* Hide index column for cleaner look */
+        .dataframe tr:hover {
+            background-color: #2c2c2c; /* Fundo ao passar o mouse */
         }
-        .dataframe thead tr th:first-child {
-            display: table-cell; /* Keep the 'Liga' header */
+        .stMetric {
+            background-color: #1a1a1a; /* Fundo dos cards de métricas */
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            color: #e0e0e0;
+        }
+        .stMetric > div > div > div:first-child {
+            color: #bb86fc; /* Cor do título da métrica (roxa) */
+            font-weight: bold;
+        }
+        .stMetric > div > div > div:nth-child(2) {
+            color: #03dac6; /* Cor do valor da métrica (ciano) */
+            font-size: 1.8em;
         }
         </style>
         """,
         unsafe_allow_html=True
     )
 
-    html_table = "<div class='radar-table-container'><table><thead><tr>"
-    for col in df_radar.columns:
-        if col == "Liga":
-            html_table += f"<th style='text-align: left;'>{col}</th>"
-        else:
-            html_table += f"<th>{col}</th>"
-    html_table += "</tr></thead><tbody>"
 
-    for _, row in df_radar.iterrows():
-        html_table += "<tr>"
-        for col in df_radar.columns:
-            value = row[col]
-            if col == "Liga":
-                logo_path = get_logo_path(value)
-                html_table += f"<td style='text-align: left;'><img src='{logo_path}' style='height: 20px; vertical-align: middle; margin-right: 8px;'>{value}</td>"
-            else:
-                color = get_color_for_percentage(value)
-                html_table += f"<td style='color: {color}; font-weight: bold;'>{value}</td>"
-        html_table += "</tr>"
-    html_table += "</tbody></table></div>"
-    st.markdown(html_table, unsafe_allow_html=True)
-
-
-def exibir_ranking_em_tabela(df_ranking: pd.DataFrame, titulo: str) -> None:
-    """Exibe um DataFrame de ranking em formato de tabela."""
-    if df_ranking.empty:
-        st.info(f"🔍 Nenhum dado de ranking encontrado para '{titulo.lower()}'.")
+def exibir_rankings(df_stats_base: pd.DataFrame) -> None:
+    """Exibe os rankings de jogadores."""
+    if df_stats_base.empty:
+        st.info("🔍 Nenhum dado de estatísticas de jogadores encontrado para gerar rankings.")
         return
 
-    st.markdown(f"### {titulo}")
-    # Applying the custom CSS for ranking tables
-    st.markdown("<div class='ranking-table-container'>", unsafe_allow_html=True)
-    st.dataframe(df_ranking, use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.subheader("🏆 Melhores e Piores Jogadores (Geral)")
+
+    # Aba para Melhores
+    tab_melhores, tab_piores = st.tabs(["👍 Melhores", "👎 Piores"])
+
+    with tab_melhores:
+        st.write("---")
+        st.markdown("##### Maiores Gols Marcados")
+        ranking_maiores_gols_marcados = gerar_ranking(
+            df_stats_base,
+            metrica_principal="Gols Marcados Média",
+            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Gols Marcados Média"],
+            nomes_para_exibicao={
+                "jogos_total": "Total de Jogos",
+                "Gols Marcados Média": "Média Gols Marcados"
+            },
+            ascendente=False,
+        )
+        st.dataframe(ranking_maiores_gols_marcados, use_container_width=True)
+
+        st.write("---")
+        st.markdown("##### Maiores Win Rate")
+        ranking_maiores_win_rate = gerar_ranking(
+            df_stats_base,
+            metrica_principal="Win Rate (%)",
+            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Win Rate (%)"],
+            nomes_para_exibicao={
+                "jogos_total": "Total de Jogos",
+                "Win Rate (%)": "Win Rate (%)"
+            },
+            ascendente=False,
+        )
+        st.dataframe(ranking_maiores_win_rate, use_container_width=True)
+
+        st.write("---")
+        st.markdown("##### Maiores Saldo de Gols")
+        ranking_maiores_saldo_gols = gerar_ranking(
+            df_stats_base,
+            metrica_principal="Saldo de Gols",
+            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Saldo de Gols"],
+            nomes_para_exibicao={
+                "jogos_total": "Total de Jogos",
+                "Saldo de Gols": "Saldo de Gols"
+            },
+            ascendente=False,
+        )
+        st.dataframe(ranking_maiores_saldo_gols, use_container_width=True)
+
+        st.write("---")
+        st.markdown("##### Maiores Over 2.5 FT (%)")
+        ranking_maiores_over25ft = gerar_ranking(
+            df_stats_base,
+            metrica_principal="Over 2.5 FT (%)",
+            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Over 2.5 FT (%)"],
+            nomes_para_exibicao={
+                "jogos_total": "Total de Jogos",
+                "Over 2.5 FT (%)": "Over 2.5 FT (%)"
+            },
+            ascendente=False,
+        )
+        st.dataframe(ranking_maiores_over25ft, use_container_width=True)
+
+        st.write("---")
+        st.markdown("##### Maiores BTTS FT (%)")
+        ranking_maiores_btts_ft = gerar_ranking(
+            df_stats_base,
+            metrica_principal="BTTS FT (%)",
+            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "BTTS FT (%)"],
+            nomes_para_exibicao={
+                "jogos_total": "Total de Jogos",
+                "BTTS FT (%)": "BTTS FT (%)"
+            },
+            ascendente=False,
+        )
+        st.dataframe(ranking_maiores_btts_ft, use_container_width=True)
+
+    with tab_piores:
+        st.write("---")
+        st.markdown("##### Piores Gols Sofridos (Média)")
+        ranking_piores_gols_sofridos = gerar_ranking(
+            df_stats_base,
+            metrica_principal="Gols Sofridos Média",
+            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Gols Sofridos Média"],
+            nomes_para_exibicao={
+                "jogos_total": "Total de Jogos",
+                "Gols Sofridos Média": "Média Gols Sofridos"
+            },
+            ascendente=False,
+        )
+        st.dataframe(ranking_piores_gols_sofridos, use_container_width=True)
+
+        st.write("---")
+        st.markdown("##### Piores Win Rate")
+        ranking_piores_win_rate = gerar_ranking(
+            df_stats_base,
+            metrica_principal="Win Rate (%)",
+            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Win Rate (%)"],
+            nomes_para_exibicao={
+                "jogos_total": "Total de Jogos",
+                "Win Rate (%)": "Win Rate (%)"
+            },
+            ascendente=True, # Piores significa menor Win Rate
+        )
+        st.dataframe(ranking_piores_win_rate, use_container_width=True)
+
+        st.write("---")
+        st.markdown("##### Piores Saldo de Gols")
+        ranking_piores_saldo_gols = gerar_ranking(
+            df_stats_base,
+            metrica_principal="Saldo de Gols",
+            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Saldo de Gols"],
+            nomes_para_exibicao={
+                "jogos_total": "Total de Jogos",
+                "Saldo de Gols": "Saldo de Gols"
+            },
+            ascendente=True, # Piores significa menor Saldo de Gols
+        )
+        st.dataframe(ranking_piores_saldo_gols, use_container_width=True)
+
+        st.write("---")
+        st.markdown("##### Piores Over 2.5 FT (%)")
+        ranking_piores_over25ft = gerar_ranking(
+            df_stats_base,
+            metrica_principal="Over 2.5 FT (%)",
+            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Over 2.5 FT (%)"],
+            nomes_para_exibicao={
+                "jogos_total": "Total de Jogos",
+                "Over 2.5 FT (%)": "Over 2.5 FT (%)"
+            },
+            ascendente=True, # Piores significa menor Over 2.5 FT
+        )
+        st.dataframe(ranking_piores_over25ft, use_container_width=True)
+
+        st.write("---")
+        st.markdown("##### Piores BTTS FT (%)")
+        ranking_piores_btts_ft = gerar_ranking(
+            df_stats_base,
+            metrica_principal="BTTS FT (%)",
+            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "BTTS FT (%)"],
+            nomes_para_exibicao={
+                "jogos_total": "Total de Jogos",
+                "BTTS FT (%)": "BTTS FT (%)"
+            },
+            ascendente=True, # Piores significa menor BTTS FT
+        )
+        st.dataframe(ranking_piores_btts_ft, use_container_width=True)
 
 
-# --- Streamlit App ---
-def main():
-    st.set_page_config(
-        page_title="Radar FIFA Bet365",
-        page_icon="⚽",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
-
-    # Custom CSS for overall app styling
+def exibir_sobre() -> None:
+    """Exibe informações sobre o projeto."""
+    st.subheader("🌟 Sobre")
     st.markdown(
         """
-        <style>
-        .stApp {
-            background-color: #1a1a2e; /* Dark background */
-            color: #e0e0e0; /* Light text color */
-        }
-        .sidebar .sidebar-content {
-            background-color: #262730; /* Darker sidebar */
-            padding: 20px;
-        }
-        .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
-            color: #f0f0f0; /* Headers color */
-        }
-        .stButton>button {
-            background-color: #4CAF50;
-            color: white;
-            border-radius: 5px;
-            border: none;
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-        .stButton>button:hover {
-            background-color: #45a049;
-        }
-        .stAlert {
-            background-color: #333344;
-            color: #e0e0e0;
-            border-left: 5px solid #6a0571;
-            border-radius: 5px;
-        }
-        /* Custom styles for metrics */
-        [data-testid="stMetric"] {
-            background-color: #262730;
-            border-radius: 10px;
-            padding: 15px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-        }
-        [data-testid="stMetricLabel"] {
-            color: #b0b0b0;
-            font-size: 1em;
-        }
-        [data-testid="stMetricValue"] {
-            color: #f0f0f0;
-            font-size: 1.8em;
-            font-weight: bold;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
+        Este aplicativo foi desenvolvido para fornecer **estatísticas e análises** de jogos FIFA,
+        com foco nas ligas de E-soccer (H2H, GT Leagues, Battle e Volta).
+        Ele busca dados de partidas ao vivo e históricas para ajudar na tomada de decisões.
+
+        ### Funcionalidades Principais:
+        - **Ao Vivo:** Acompanhe jogos em tempo real com sugestões de Over Players,HT e FT.
+        - **Resultados:** Visualize um histórico detalhado das partidas do dia.
+        - **Radar FIFA:** Analise a tendência de Overs gols nos mercados HT & FT das ligas em tempo real.
+        - **Rankings:** Descubra os melhores e piores jogadores com base em diversas métricas.
+
+        ### Desenvolvedor:
+        - **Vagner Sembrani**
+
+        ### Feedback e Sugestões:
+        Sua opinião é muito importante! Se tiver sugestões ou encontrar algum problema, entre em contato.
+        """
     )
 
-    st.sidebar.title("🤖 SIMULADOR FIFA")
-    st.sidebar.markdown("Programador: https://www.instagram.com/vagsembrani/")
+# --- Configuração do Layout do Streamlit ---
+st.set_page_config(
+    page_title="FIFA Stats - Vagner S.",
+    page_icon="⚽",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-    st_autorefresh(interval=300 * 1000, key="data_refresh") # Refresh every 5 minutes
+# Injeção de CSS personalizado para o tema escuro
+st.markdown(
+    """
+    <style>
+    /* Estilos Gerais para o tema escuro */
+    .stApp {
+        background-color: #0e1117; /* Cor de fundo principal mais escura */
+        color: #fafafa; /* Cor de texto padrão mais clara */
+    }
+    .st-emotion-cache-1r6dm7m { /* Sidebar background */
+        background-color: #1a1a1a;
+    }
+    .st-emotion-cache-1r6dm7m .st-bw { /* Links na sidebar */
+        color: #bb86fc; /* Cor de link para um toque mais moderno */
+    }
+    .st-emotion-cache-1r6dm7m .st-dq { /* Título na sidebar */
+        color: #f0f0f0;
+    }
 
-    # Using session state for data caching and to avoid re-fetching unnecessarily
-    if "df_resultados" not in st.session_state:
-        st.session_state.df_resultados = pd.DataFrame()
-    if "df_live_clean" not in st.session_state:
-        st.session_state.df_live_clean = pd.DataFrame()
-    if "df_live_display" not in st.session_state:
-        st.session_state.df_live_display = pd.DataFrame()
-    if "df_stats_all_players" not in st.session_state:
-        st.session_state.df_stats_all_players = pd.DataFrame()
+    /* Estilo para as métricas (st.metric) - Mantido, mas pode ser mais genérico */
+    .stMetric {
+        background-color: #1a1a1a; /* Fundo dos cards de métricas */
+        border-radius: 8px;
+        padding: 15px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        color: #e0e0e0;
+    }
+    .stMetric > div > div > div:first-child {
+        color: #bb86fc; /* Cor do título da métrica (roxa) */
+        font-weight: bold;
+    }
+    .stMetric > div > div > div:nth-child(2) {
+        color: #03dac6; /* Cor do valor da métrica (ciano) */
+        font-size: 1.8em;
+    }
 
-    with st.spinner("Carregando dados... Isso pode levar alguns segundos."):
-        # Pass a dummy flag to force cache clear if needed (e.g., every 6 hours)
-        df_resultados, df_live_clean, df_live_display = carregar_todos_os_dados_essenciais(
-            datetime.now().hour // 6
-        )
-        st.session_state.df_resultados = df_resultados
-        st.session_state.df_live_clean = df_live_clean
-        st.session_state.df_live_display = df_live_display
-        st.session_state.df_stats_all_players = calcular_estatisticas_todos_jogadores(df_resultados)
-
-    st.markdown(f"Última atualização: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-
-    # Define the tabs including the new "Radar FIFA" tab
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Ao Vivo", "📡 Radar FIFA", "📜 Resultados Históricos", "🏆 Análise de Rankings"])
-
-    with tab1:
-        st.header("🤖 Simulador (Bet365)")
-        st.write("Analises enviadas em tempo real para cada partida.")
-        exibir_estatisticas_partidas(st.session_state.df_live_display, "Partidas Ao Vivo")
-
-    with tab2: # New tab for Radar FIFA
-        st.header("📡 Radar FIFA (Saiba como está cada grade em tempo real)")
-        st.write("Identifique padrões no HT & FT de cada liga")
-        df_radar_fifa = calcular_radar_fifa(st.session_state.df_live_clean)
-        exibir_radar_fifa(df_radar_fifa)
-
-    with tab3: # Renamed from tab2 to tab3
-        st.header("📜 Resultados Históricos (Fifa)")
-        st.write("Base de dados completa dos resultados de jogos anteriores.")
-        exibir_estatisticas_partidas(st.session_state.df_resultados, "Resultados Históricos")
-
-    with tab4: # Renamed from tab3 to tab4
-        st.header("🏆 Análises de Rankings de Jogadores")
-        st.markdown(
-            "Explore os rankings dos jogadores com base em diversas métricas, "
-            "considerando jogadores com no mínimo 10 jogos e os TOP 20 em cada categoria."
-        )
-
-        # min_jogos_ranking and top_n_ranking are now fixed inside gerar_ranking
-        # They are not exposed as sliders in the sidebar anymore.
-        min_jogos_ranking_fixed = 10
-        top_n_ranking_fixed = 20
-
-        df_stats_all_players = st.session_state.df_stats_all_players
-
-        if df_stats_all_players.empty:
-            st.info("Nenhuma estatística de jogador disponível para gerar rankings.")
-        else:
-            st.markdown("---")
-
-            # --- Ranking Tabs within 'Análise de Rankings' ---
-            tab_ht_overs, tab_ft_overs, tab_btts, tab_geral = st.tabs([
-                "📊 Overs HT", "📈 Overs FT", "⚽ Ambos Marcam (BTTS)", "🏆 Geral"
-            ])
-
-            with tab_ht_overs:
-                st.subheader("Rankings de Gols no Primeiro Tempo (HT)")
-
-                # Over 0.5 HT
-                colunas_over_ht_05 = ["Jogador", "Over 0.5 HT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_over_ht_05 = {"jogos_total": "Jogos"}
-                df_ranking_over_05_ht = gerar_ranking(
-                    df_stats_all_players, "Over 0.5 HT (%)", colunas_over_ht_05,
-                    nomes_para_exibicao=nomes_over_ht_05, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_over_05_ht, "Melhores para Over 0.5 HT")
-                st.write("Jogadores com a maior porcentagem de jogos com Over 0.5 HT.")
-
-                st.markdown("---")
-
-                # Over 1.5 HT
-                colunas_over_ht_15 = ["Jogador", "Over 1.5 HT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_over_ht_15 = {"jogos_total": "Jogos"}
-                df_ranking_over_15_ht = gerar_ranking(
-                    df_stats_all_players, "Over 1.5 HT (%)", colunas_over_ht_15,
-                    nomes_para_exibicao=nomes_over_ht_15, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_over_15_ht, "Melhores para Over 1.5 HT")
-                st.write("Jogadores com a maior porcentagem de jogos com Over 1.5 HT.")
-
-                st.markdown("---")
-
-                # Over 2.5 HT
-                colunas_over_ht_25 = ["Jogador", "Over 2.5 HT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_over_ht_25 = {"jogos_total": "Jogos"}
-                df_ranking_over_25_ht = gerar_ranking(
-                    df_stats_all_players, "Over 2.5 HT (%)", colunas_over_ht_25,
-                    nomes_para_exibicao=nomes_over_ht_25, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_over_25_ht, "Melhores para Over 2.5 HT")
-                st.write("Jogadores com a maior porcentagem de jogos com Over 2.5 HT.")
-
-            with tab_ft_overs:
-                st.subheader("Rankings de Gols no Jogo Completo (FT)")
-
-                # Over 0.5 FT
-                colunas_over_ft_05 = ["Jogador", "Over 0.5 FT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_over_ft_05 = {"jogos_total": "Jogos"}
-                df_ranking_over_05_ft = gerar_ranking(
-                    df_stats_all_players, "Over 0.5 FT (%)", colunas_over_ft_05,
-                    nomes_para_exibicao=nomes_over_ft_05, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_over_05_ft, "Melhores para Over 0.5 FT")
-                st.write("Jogadores com a maior porcentagem de jogos com Over 0.5 FT.")
-
-                st.markdown("---")
-
-                # Over 1.5 FT
-                colunas_over_ft_15 = ["Jogador", "Over 1.5 FT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_over_ft_15 = {"jogos_total": "Jogos"}
-                df_ranking_over_15_ft = gerar_ranking(
-                    df_stats_all_players, "Over 1.5 FT (%)", colunas_over_ft_15,
-                    nomes_para_exibicao=nomes_over_ft_15, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_over_15_ft, "Melhores para Over 1.5 FT")
-                st.write("Jogadores com a maior porcentagem de jogos com Over 1.5 FT.")
-
-                st.markdown("---")
-
-                # Over 2.5 FT
-                colunas_over_ft_25 = ["Jogador", "Over 2.5 FT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_over_ft_25 = {"jogos_total": "Jogos"}
-                df_ranking_over_25_ft = gerar_ranking(
-                    df_stats_all_players, "Over 2.5 FT (%)", colunas_over_ft_25,
-                    nomes_para_exibicao=nomes_over_ft_25, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_over_25_ft, "Melhores para Over 2.5 FT")
-                st.write("Jogadores com a maior porcentagem de jogos com Over 2.5 FT.")
-
-                st.markdown("---")
-
-                # Over 3.5 FT
-                colunas_over_ft_35 = ["Jogador", "Over 3.5 FT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_over_ft_35 = {"jogos_total": "Jogos"}
-                df_ranking_over_35_ft = gerar_ranking(
-                    df_stats_all_players, "Over 3.5 FT (%)", colunas_over_ft_35,
-                    nomes_para_exibicao=nomes_over_ft_35, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_over_35_ft, "Melhores para Over 3.5 FT")
-                st.write("Jogadores com a maior porcentagem de jogos com Over 3.5 FT.")
-
-                st.markdown("---")
-
-                # Over 4.5 FT
-                colunas_over_ft_45 = ["Jogador", "Over 4.5 FT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_over_ft_45 = {"jogos_total": "Jogos"}
-                df_ranking_over_45_ft = gerar_ranking(
-                    df_stats_all_players, "Over 4.5 FT (%)", colunas_over_ft_45,
-                    nomes_para_exibicao=nomes_over_ft_45, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_over_45_ft, "Melhores para Over 4.5 FT")
-                st.write("Jogadores com a maior porcentagem de jogos com Over 4.5 FT.")
-
-                st.markdown("---")
-
-                # Over 5.5 FT
-                colunas_over_ft_55 = ["Jogador", "Over 5.5 FT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_over_ft_55 = {"jogos_total": "Jogos"}
-                df_ranking_over_55_ft = gerar_ranking(
-                    df_stats_all_players, "Over 5.5 FT (%)", colunas_over_ft_55,
-                    nomes_para_exibicao=nomes_over_ft_55, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_over_55_ft, "Melhores para Over 5.5 FT")
-                st.write("Jogadores com a maior porcentagem de jogos com Over 5.5 FT.")
-
-                st.markdown("---")
-
-                # Over 6.5 FT
-                colunas_over_ft_65 = ["Jogador", "Over 6.5 FT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_over_ft_65 = {"jogos_total": "Jogos"}
-                df_ranking_over_65_ft = gerar_ranking(
-                    df_stats_all_players, "Over 6.5 FT (%)", colunas_over_ft_65,
-                    nomes_para_exibicao=nomes_over_ft_65, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_over_65_ft, "Melhores para Over 6.5 FT")
-                st.write("Jogadores com a maior porcentagem de jogos com Over 6.5 FT.")
-
-                st.markdown("---")
-
-                # Under 2.5 FT (New tab within FT Overs)
-                colunas_under_ft_25 = ["Jogador", "Under 2.5 FT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_under_ft_25 = {"jogos_total": "Jogos"}
-                df_ranking_under_25_ft = gerar_ranking(
-                    df_stats_all_players, "Under 2.5 FT (%)", colunas_under_ft_25,
-                    nomes_para_exibicao=nomes_under_ft_25, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_under_25_ft, "Melhores para Under 2.5 FT")
-                st.write("Jogadores com a maior porcentagem de jogos com Menos de 2.5 Gols no FT.")
+    /* Estilo para o novo card de atualização (st.info customizado) */
+    .custom-info-card {
+        background-color: #1a1a1a; /* Fundo escuro do card */
+        border-radius: 10px;
+        padding: 15px 20px;
+        margin-bottom: 20px; /* Espaço abaixo do card */
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); /* Sombra mais destacada */
+        display: flex;
+        align-items: center;
+        gap: 15px; /* Espaço entre ícone e texto */
+        color: #e0e0e0; /* Cor do texto */
+        font-size: 1.1em;
+        font-weight: bold;
+        border: 1px solid #333; /* Borda sutil */
+    }
+    .custom-info-card .icon {
+        font-size: 2.2em; /* Tamanho maior para o ícone */
+        color: #03dac6; /* Cor do ícone (ciano) */
+        line-height: 1; /* Alinhamento vertical */
+    }
+    .custom-info-card .text {
+        flex-grow: 1; /* Permite que o texto ocupe o espaço restante */
+    }
+    .custom-info-card .datetime {
+        font-size: 1.2em;
+        color: #bb86fc; /* Cor do timestamp (roxo) */
+    }
 
 
-            with tab_btts:
-                st.subheader("Rankings de Ambos Marcam (BTTS)")
+    /* Estilo para os cabeçalhos de seção */
+    h1, h2, h3, h4, h5, h6 {
+        color: #e0e0e0; /* Cor dos títulos para melhor contraste */
+    }
 
-                # BTTS HT
-                colunas_btts_ht = ["Jogador", "BTTS HT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_btts_ht = {"jogos_total": "Jogos"}
-                df_ranking_btts_ht = gerar_ranking(
-                    df_stats_all_players, "BTTS HT (%)", colunas_btts_ht,
-                    nomes_para_exibicao=nomes_btts_ht, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_btts_ht, "Melhores para BTTS HT")
-                st.write("Jogadores com a maior porcentagem de jogos com Ambos Marcam no HT.")
+    /* Estilo para abas (tabs) */
+    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
+        font-size: 1.1rem;
+        color: #bb86fc; /* Cor do texto das abas */
+    }
+    .stTabs [data-baseweb="tab-list"] button.st-emotion-cache-fnmr37 { /* Aba selecionada */
+        background-color: #333333;
+        color: #f0f0f0; /* Cor do texto da aba selecionada */
+        border-bottom: 2px solid #03dac6; /* Borda inferior ciano */
+    }
+    .stTabs [data-baseweb="tab-list"] button {
+        background-color: #212121; /* Fundo das abas não selecionadas */
+        color: #bb86fc; /* Cor do texto das abas não selecionadas */
+    }
 
-                st.markdown("---")
 
-                # BTTS FT
-                colunas_btts_ft = ["Jogador", "BTTS FT (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_btts_ft = {"jogos_total": "Jogos"}
-                df_ranking_btts_ft = gerar_ranking(
-                    df_stats_all_players, "BTTS FT (%)", colunas_btts_ft,
-                    nomes_para_exibicao=nomes_btts_ft, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_btts_ft, "Melhores para BTTS FT")
-                st.write("Jogadores com a maior porcentagem de jogos com Ambos Marcam no FT.")
+    /* Estilos para a tabela do radar FIFA (já estava no código) */
+    .dataframe {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9em;
+        text-align: center;
+        color: #e0e0e0;
+    }
+    .dataframe th {
+        background-color: #262626;
+        padding: 10px;
+        border: 1px solid #333;
+        color: #f0f0f0;
+    }
+    .dataframe td {
+        padding: 8px;
+        border: 1px solid #333;
+        vertical-align: middle;
+        background-color: #1a1a1a;
+    }
+    .dataframe tr:nth-child(even) {
+        background-color: #1a1a1a;
+    }
+    .dataframe tr:nth-child(odd) {
+        background-color: #212121;
+    }
+    .dataframe tr:hover {
+        background-color: #2c2c2c;
+    }
 
-            with tab_geral:
-                st.subheader("Rankings Gerais de Jogadores")
+    /* Ajustes para o st.info padrão (caso ainda seja usado em outro lugar) */
+    .stAlert p {
+        color: #f0f0f0 !important; /* Garante que o texto do st.info seja claro */
+    }
+    .stAlert.info-alert {
+        background-color: #2a2a2a; /* Fundo mais escuro para info */
+        border-left: 5px solid #2196F3; /* Borda azul para info */
+        color: #f0f0f0;
+    }
 
-                # Melhores Gols Marcados Média
-                colunas_gm = ["Jogador", "Gols Marcados Média", "jogos_total", "Ligas Atuantes"]
-                nomes_gm = {"jogos_total": "Jogos"}
-                df_ranking_gm = gerar_ranking(
-                    df_stats_all_players, "Gols Marcados Média", colunas_gm,
-                    nomes_para_exibicao=nomes_gm, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_gm, "Melhores Gols Marcados (Média)")
-                st.write("Jogadores com a maior média de gols marcados por jogo.")
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
-                st.markdown("---")
+# Sidebar
+with st.sidebar:
+    st.image("https://i.imgur.com/neR5gSO.png", width=150) # Substitua pela sua imagem de logo
+    st.title("  🎮 SIMULADOR FIFA")
+    st.markdown("---")
 
-                # Piores Gols Sofridos Média (para Clean Sheets ou Under)
-                colunas_gs = ["Jogador", "Gols Sofridos Média", "jogos_total", "Ligas Atuantes"]
-                nomes_gs = {"jogos_total": "Jogos"}
-                df_ranking_gs = gerar_ranking(
-                    df_stats_all_players, "Gols Sofridos Média", colunas_gs,
-                    nomes_para_exibicao=nomes_gs, ascendente=True, # Ascendente para Piores (menor média de gols sofridos)
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_gs, "Melhores Gols Sofridos (Média)")
-                st.write("Jogadores com a menor média de gols sofridos por jogo (bons para Under / Clean Sheet).")
+    aba_selecionada = st.radio(
+        "Menu",
+        ["Ao Vivo", "Resultados", "Radar FIFA", "Rankings", "Sobre"],
+        index=0,
+        help="Selecione a seção que deseja visualizar.",
+        key="main_navigation"
+    )
+    st.markdown("---")
 
-                st.markdown("---")
+    # st_autorefresh mantido para o cache TTL funcionar, sem o argumento display_spinner
+    # O TTL (Time To Live) de 300 segundos (5 minutos) no @st.cache_data fará com que os dados sejam buscados
+    # novamente a cada 5 minutos, garantindo que o "Última atualização" no topo da tela principal
+    # seja atualizado e os dados também.
+    st_autorefresh(interval=300 * 1000, key="data_refresh_hidden")
 
-                # Melhores Saldo de Gols
-                colunas_saldo = ["Jogador", "Saldo de Gols", "jogos_total", "Ligas Atuantes"]
-                nomes_saldo = {"jogos_total": "Jogos"}
-                df_ranking_saldo = gerar_ranking(
-                    df_stats_all_players, "Saldo de Gols", colunas_saldo,
-                    nomes_para_exibicao=nomes_saldo, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_saldo, "Melhores Saldo de Gols")
-                st.write("Jogadores com o maior saldo de gols (Gols Marcados - Gols Sofridos).")
 
-                st.markdown("---")
+# --- Carregamento de Dados Principal ---
+# Use um contador simples para forçar o recarregamento dos dados em cada refresh do autorefresh
+# Isso garante que as funções @st.cache_data sejam invalidadas e os dados sejam buscados novamente.
+if 'refresh_flag' not in st.session_state:
+    st.session_state.refresh_flag = 0
 
-                # Melhores Win Rate
-                colunas_win_rate = ["Jogador", "Win Rate (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_win_rate = {"jogos_total": "Jogos"}
-                df_ranking_win_rate = gerar_ranking(
-                    df_stats_all_players, "Win Rate (%)", colunas_win_rate,
-                    nomes_para_exibicao=nomes_win_rate, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_win_rate, "Melhores Win Rate")
-                st.write("Jogadores com a maior porcentagem de vitórias.")
+df_resultados, df_live_clean, df_live_display = carregar_todos_os_dados_essenciais(st.session_state.refresh_flag)
+df_stats_base = calcular_estatisticas_todos_jogadores(df_resultados)
+df_radar = calcular_radar_fifa(df_live_clean)
 
-                st.markdown("---")
+# --- Renderização do Conteúdo Principal ---
+st.header(f"Página: {aba_selecionada}")
 
-                # Melhores Clean Sheets
-                colunas_cs = ["Jogador", "Clean Sheets (%)", "jogos_total", "Ligas Atuantes"]
-                nomes_cs = {"jogos_total": "Jogos"}
-                df_ranking_cs = gerar_ranking(
-                    df_stats_all_players, "Clean Sheets (%)", colunas_cs,
-                    nomes_para_exibicao=nomes_cs, ascendente=False,
-                    min_jogos=min_jogos_ranking_fixed, top_n=top_n_ranking_fixed
-                )
-                exibir_ranking_em_tabela(df_ranking_cs, "Melhores Clean Sheets")
-                st.write("Jogadores com a maior porcentagem de jogos sem sofrer gols.")
+# NOVO: Card de Última Atualização no topo da tela principal
+tz = pytz.timezone('America/Sao_Paulo')
+now = datetime.now(tz)
+st.markdown(
+    f"""
+    <div class="custom-info-card">
+        <span class="icon">⏰</span>
+        <div class="text">
+            Última atualização dos dados:
+            <br>
+            <span class="datetime">{now.strftime('%d/%m/%Y %H:%M:%S')}</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
-if __name__ == "__main__":
-    main()
+if aba_selecionada == "Ao Vivo":
+    st.subheader("🔴 Jogos Ao Vivo")
+    exibir_estatisticas_partidas(df_live_display, "Jogos Ao Vivo")
+elif aba_selecionada == "Resultados":
+    st.subheader("📜 Resultados Históricos")
+    exibir_estatisticas_partidas(df_resultados, "Resultados Históricos")
+elif aba_selecionada == "Radar FIFA":
+    st.subheader("📊 Radar FIFA - Tendências por Liga")
+    st.write("Análise da frequência de Linhas Over HT & FT de cada liga em tempo real.")
+    st.markdown("---")
+    st.markdown("---")
+    exibir_radar_fifa(df_radar)
+elif aba_selecionada == "Rankings":
+    exibir_rankings(df_stats_base)
+elif aba_selecionada == "Sobre":
+    exibir_sobre()
+
+# Incrementar a flag para o próximo refresh
+st.session_state.refresh_flag += 1
