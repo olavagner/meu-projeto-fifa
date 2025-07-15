@@ -1,5 +1,3 @@
-# Vagner S.
-
 from __future__ import annotations
 import requests
 import pandas as pd
@@ -51,6 +49,7 @@ CRITERIOS_FT = {
     "5.5 FT": {"min": 6.70, "max": float('inf')},
 }
 
+
 def sugerir_over_ft(media_gols_ft: float) -> str:
     """Retorna a sugestão para Over FT com base na média de gols FT."""
     if media_gols_ft >= 6.70:
@@ -68,17 +67,19 @@ def sugerir_over_ft(media_gols_ft: float) -> str:
     else:
         return "Sem Entrada"
 
+
 # Utilitários de Rede
 def requisicao_segura(url: str, timeout: int = 15) -> Optional[requests.Response]:
     """Realiza uma requisição HTTP segura."""
     try:
         r = requests.get(url, headers=HEADERS, timeout=timeout)
-        r.raise_for_status()  # Lança um HTTPError para respostas de erro (4xx ou 5xx)
+        r.raise_for_status()
         return r
     except requests.exceptions.RequestException as e:
         logger.error(f"Erro ao acessar {url}: {e}")
         st.error(f"❌ Erro de conexão com {url}: {e}")
         return None
+
 
 @st.cache_data(show_spinner=False, ttl=300)
 def extrair_dados_pagina(url: str) -> list[list[str]]:
@@ -97,6 +98,7 @@ def extrair_dados_pagina(url: str) -> list[list[str]]:
         logger.error(f"Erro ao processar HTML de {url}: {e}")
         st.error(f"❌ Erro ao processar dados de {url}")
         return []
+
 
 # Processamento de Resultados Históricos
 @st.cache_data(show_spinner=False, ttl=300)
@@ -186,15 +188,16 @@ def buscar_resultados() -> pd.DataFrame:
         st.error(f"❌ Erro ao processar dados de resultados")
         return pd.DataFrame()
 
+
 # Funções de Estatísticas
 def calcular_estatisticas_jogador(df: pd.DataFrame, jogador: str, liga: str) -> dict:
     """Calcula estatísticas de um jogador em uma liga específica."""
     zeros = {
         "jogos_total": 0, "gols_marcados": 0, "gols_sofridos": 0,
         "gols_marcados_ht": 0, "gols_sofridos_ht": 0,
-        "over_05_ht": 0, "over_15_ht": 0, "over_25_ht": 0, "btts_ht": 0,
-        "over_05_ft": 0, "over_15_ft": 0, "over_25_ft": 0, "over_35_ft": 0,
-        "over_45_ft": 0, "over_55_ft": 0, "over_65_ft": 0, "btts_ft": 0
+        "over_05_ht_hits": 0, "over_15_ht_hits": 0, "over_25_ht_hits": 0, "btts_ht_hits": 0,
+        "over_05_ft_hits": 0, "over_15_ft_hits": 0, "over_25_ft_hits": 0, "over_35_ft_hits": 0,
+        "over_45_ft_hits": 0, "over_55_ft_hits": 0, "over_65_ft_hits": 0, "btts_ft_hits": 0
     }
     if df.empty:
         return zeros.copy()
@@ -221,20 +224,20 @@ def calcular_estatisticas_jogador(df: pd.DataFrame, jogador: str, liga: str) -> 
         s["gols_sofridos_ht"] += ga_ht
 
         total_ht = jogo["Total HT"]
-        s["over_05_ht"] += 1 if total_ht > 0 else 0
-        s["over_15_ht"] += 1 if total_ht > 1 else 0
-        s["over_25_ht"] += 1 if total_ht > 2 else 0
-        s["btts_ht"] += 1 if (gf_ht > 0 and ga_ht > 0) else 0
+        s["over_05_ht_hits"] += 1 if total_ht > 0 else 0
+        s["over_15_ht_hits"] += 1 if total_ht > 1 else 0
+        s["over_25_ht_hits"] += 1 if total_ht > 2 else 0
+        s["btts_ht_hits"] += 1 if (gf_ht > 0 and ga_ht > 0) else 0
 
         total_ft = jogo["Total FT"]
-        s["over_05_ft"] += 1 if total_ft > 0 else 0
-        s["over_15_ft"] += 1 if total_ft > 1 else 0
-        s["over_25_ft"] += 1 if total_ft > 2 else 0
-        s["over_35_ft"] += 1 if total_ft > 3 else 0
-        s["over_45_ft"] += 1 if total_ft > 4 else 0
-        s["over_55_ft"] += 1 if total_ft > 5 else 0
-        s["over_65_ft"] += 1 if total_ft > 6 else 0
-        s["btts_ft"] += 1 if (gf_ft > 0 and ga_ft > 0) else 0
+        s["over_05_ft_hits"] += 1 if total_ft > 0 else 0
+        s["over_15_ft_hits"] += 1 if total_ft > 1 else 0
+        s["over_25_ft_hits"] += 1 if total_ft > 2 else 0
+        s["over_35_ft_hits"] += 1 if total_ft > 3 else 0
+        s["over_45_ft_hits"] += 1 if total_ft > 4 else 0
+        s["over_55_ft_hits"] += 1 if total_ft > 5 else 0
+        s["over_65_ft_hits"] += 1 if total_ft > 6 else 0
+        s["btts_ft_hits"] += 1 if (gf_ft > 0 and ga_ft > 0) else 0
 
     for _, jogo in jm.iterrows():
         acum(jogo, True)
@@ -242,6 +245,7 @@ def calcular_estatisticas_jogador(df: pd.DataFrame, jogador: str, liga: str) -> 
         acum(jogo, False)
 
     return s
+
 
 @st.cache_data(show_spinner=False, ttl=300)
 def calcular_estatisticas_todos_jogadores(df_resultados: pd.DataFrame) -> pd.DataFrame:
@@ -352,7 +356,7 @@ def calcular_estatisticas_todos_jogadores(df_resultados: pd.DataFrame) -> pd.Dat
         if total_ft > 2:
             jogador_stats[mandante]["over_25_ft_hits"] += 1
             jogador_stats[visitante]["over_25_ft_hits"] += 1
-        else: # Para Under 2.5 FT (total_ft <= 2)
+        else:  # Para Under 2.5 FT (total_ft <= 2)
             jogador_stats[mandante]["under_25_ft_hits"] += 1
             jogador_stats[visitante]["under_25_ft_hits"] += 1
         if total_ft > 3:
@@ -380,46 +384,185 @@ def calcular_estatisticas_todos_jogadores(df_resultados: pd.DataFrame) -> pd.Dat
 
     # Calcula as métricas percentuais/médias
     df_rankings_base["Win Rate (%)"] = (df_rankings_base["vitorias"] / df_rankings_base["jogos_total"] * 100).fillna(0)
-    df_rankings_base["Derrota Rate (%)"] = (df_rankings_base["derrotas"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+    df_rankings_base["Derrota Rate (%)"] = (
+            df_rankings_base["derrotas"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Gols Marcados Média"] = (
-                df_rankings_base["gols_marcados"] / df_rankings_base["jogos_total"]).fillna(0)
+            df_rankings_base["gols_marcados"] / df_rankings_base["jogos_total"]).fillna(0)
     df_rankings_base["Gols Sofridos Média"] = (
-                df_rankings_base["gols_sofridos"] / df_rankings_base["jogos_total"]).fillna(0)
+            df_rankings_base["gols_sofridos"] / df_rankings_base["jogos_total"]).fillna(0)
     df_rankings_base["Saldo de Gols"] = df_rankings_base["gols_marcados"] - df_rankings_base["gols_sofridos"]
     df_rankings_base["Clean Sheets (%)"] = (
-                df_rankings_base["clean_sheets"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["clean_sheets"] / df_rankings_base["jogos_total"] * 100).fillna(0)
 
     # Percentuais de Overs e BTTS
     df_rankings_base["Over 0.5 HT (%)"] = (
-                df_rankings_base["over_05_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_05_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 1.5 HT (%)"] = (
-                df_rankings_base["over_15_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_15_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 2.5 HT (%)"] = (
-                df_rankings_base["over_25_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_25_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["BTTS HT (%)"] = (df_rankings_base["btts_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(
         0)
     df_rankings_base["Over 0.5 FT (%)"] = (
-                df_rankings_base["over_05_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_05_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 1.5 FT (%)"] = (
-                df_rankings_base["over_15_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_15_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 2.5 FT (%)"] = (
-                df_rankings_base["over_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 3.5 FT (%)"] = (
-                df_rankings_base["over_35_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_35_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 4.5 FT (%)"] = (
-                df_rankings_base["over_45_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_45_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 5.5 FT (%)"] = (
-                df_rankings_base["over_55_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_55_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 6.5 FT (%)"] = (
-                df_rankings_base["over_65_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_65_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["BTTS FT (%)"] = (df_rankings_base["btts_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(
         0)
-    df_rankings_base["Under 2.5 FT (%)"] = (df_rankings_base["under_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+    df_rankings_base["Under 2.5 FT (%)"] = (
+            df_rankings_base["under_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
 
     # Converte o set de ligas para string para exibição
     df_rankings_base["Ligas Atuantes"] = df_rankings_base["ligas_atuantes"].apply(lambda x: ", ".join(sorted(list(x))))
 
     return df_rankings_base
+
+
+# --- Nova função para buscar e analisar os últimos N jogos de um jogador ---
+def get_recent_player_stats(df_resultados: pd.DataFrame, player_name: str, num_games: int) -> dict:
+    """
+    Calcula estatísticas para um jogador nas suas últimas N partidas,
+    independentemente do adversário.
+    """
+    player_games = df_resultados[
+        (df_resultados["Mandante"] == player_name) | (df_resultados["Visitante"] == player_name)
+        ].tail(num_games).copy()
+
+    if player_games.empty:
+        return {}
+
+    stats = {
+        "jogos_recentes": len(player_games),
+        "gols_marcados_ft": 0,
+        "gols_sofridos_ft": 0,
+        "gols_marcados_ht": 0,
+        "gols_sofridos_ht": 0,
+        "over_05_ht_hits": 0,
+        "over_15_ht_hits": 0,
+        "over_25_ht_hits": 0,
+        "btts_ht_hits": 0,
+        "over_05_ft_hits": 0,
+        "over_15_ft_hits": 0,
+        "over_25_ft_hits": 0,
+        "over_35_ft_hits": 0,
+        "over_45_ft_hits": 0,
+        "over_55_ft_hits": 0,
+        "over_65_ft_hits": 0,
+        "btts_ft_hits": 0,
+        "under_25_ft_hits": 0,
+        "sequencia_vitorias": 0,
+        "sequencia_derrotas": 0,
+        "sequencia_empates": 0,
+        "sequencia_btts": 0,
+        "sequencia_over_25_ft": 0
+    }
+
+    last_result = None
+    last_btts = None
+    last_over_25_ft = None
+
+    for idx, row in player_games.iterrows():
+        is_home = row["Mandante"] == player_name
+        gf_ft = row["Mandante FT"] if is_home else row["Visitante FT"]
+        ga_ft = row["Visitante FT"] if is_home else row["Mandante FT"]
+        gf_ht = row["Mandante HT"] if is_home else row["Visitante HT"]
+        ga_ht = row["Visitante HT"] if is_home else row["Mandante HT"]
+
+        stats["gols_marcados_ft"] += gf_ft
+        stats["gols_sofridos_ft"] += ga_ft
+        stats["gols_marcados_ht"] += gf_ht
+        stats["gols_sofridos_ht"] += ga_ht
+
+        total_ht = row["Total HT"]
+        if total_ht > 0: stats["over_05_ht_hits"] += 1
+        if total_ht > 1: stats["over_15_ht_hits"] += 1
+        if total_ht > 2: stats["over_25_ht_hits"] += 1
+        if gf_ht > 0 and ga_ht > 0: stats["btts_ht_hits"] += 1
+
+        total_ft = row["Total FT"]
+        if total_ft > 0: stats["over_05_ft_hits"] += 1
+        if total_ft > 1: stats["over_15_ft_hits"] += 1
+        if total_ft > 2:
+            stats["over_25_ft_hits"] += 1
+        else:
+            stats["under_25_ft_hits"] += 1
+        if total_ft > 3: stats["over_35_ft_hits"] += 1
+        if total_ft > 4: stats["over_45_ft_hits"] += 1
+        if total_ft > 5: stats["over_55_ft_hits"] += 1
+        if total_ft > 6: stats["over_65_ft_hits"] += 1
+
+        btts_ft_current = (gf_ft > 0 and ga_ft > 0)
+        if btts_ft_current: stats["btts_ft_hits"] += 1
+
+        over_25_ft_current = (total_ft > 2)
+
+        # Cálculo de sequências (simplificado: apenas a sequência atual)
+        current_result = "win" if gf_ft > ga_ft else ("loss" if gf_ft < ga_ft else "draw")
+        if last_result is None or current_result == last_result:
+            if current_result == "win":
+                stats["sequencia_vitorias"] += 1
+            elif current_result == "loss":
+                stats["sequencia_derrotas"] += 1
+            else:
+                stats["sequencia_empates"] += 1
+        else:
+            stats["sequencia_vitorias"] = 1 if current_result == "win" else 0
+            stats["sequencia_derrotas"] = 1 if current_result == "loss" else 0
+            stats["sequencia_empates"] = 1 if current_result == "draw" else 0
+        last_result = current_result
+
+        if last_btts is None or btts_ft_current == last_btts:
+            if btts_ft_current: stats["sequencia_btts"] += 1
+        else:
+            stats["sequencia_btts"] = 1 if btts_ft_current else 0
+        last_btts = btts_ft_current
+
+        if last_over_25_ft is None or over_25_ft_current == last_over_25_ft:
+            if over_25_ft_current: stats["sequencia_over_25_ft"] += 1
+        else:
+            stats["sequencia_over_25_ft"] = 1 if over_25_ft_current else 0
+        last_over_25_ft = over_25_ft_current
+
+    # Calcular médias e percentuais
+    total_jogos = stats["jogos_recentes"]
+    if total_jogos > 0:
+        stats["media_gols_marcados_ft"] = stats["gols_marcados_ft"] / total_jogos
+        stats["media_gols_sofridos_ft"] = stats["gols_sofridos_ft"] / total_jogos
+        stats["media_gols_marcados_ht"] = stats["gols_marcados_ht"] / total_jogos
+        stats["media_gols_sofridos_ht"] = stats["gols_sofridos_ht"] / total_jogos
+
+        stats["pct_over_05_ht"] = (stats["over_05_ht_hits"] / total_jogos) * 100
+        stats["pct_over_15_ht"] = (stats["over_15_ht_hits"] / total_jogos) * 100
+        stats["pct_over_25_ht"] = (stats["over_25_ht_hits"] / total_jogos) * 100
+        stats["pct_btts_ht"] = (stats["btts_ht_hits"] / total_jogos) * 100
+
+        stats["pct_over_05_ft"] = (stats["over_05_ft_hits"] / total_jogos) * 100
+        stats["pct_over_15_ft"] = (stats["over_15_ft_hits"] / total_jogos) * 100
+        stats["pct_over_25_ft"] = (stats["over_25_ft_hits"] / total_jogos) * 100
+        stats["pct_over_35_ft"] = (stats["over_35_ft_hits"] / total_jogos) * 100
+        stats["pct_over_45_ft"] = (stats["over_45_ft_hits"] / total_jogos) * 100
+        stats["pct_over_55_ft"] = (stats["over_55_ft_hits"] / total_jogos) * 100
+        stats["pct_over_65_ft"] = (stats["over_65_ft_hits"] / total_jogos) * 100
+        stats["pct_btts_ft"] = (stats["btts_ft_hits"] / total_jogos) * 100
+        stats["pct_under_25_ft"] = (stats["under_25_ft_hits"] / total_jogos) * 100
+    else:
+        for key in list(stats.keys()):
+            if key not in ["jogos_recentes", "sequencia_vitorias", "sequencia_derrotas", "sequencia_empates",
+                           "sequencia_btts", "sequencia_over_25_ft"]:
+                stats[key] = 0.0
+
+    return stats
+
 
 # Funções de Formatação e Ranking
 def cor_icon(h_m, t_m, h_v, t_v) -> str:
@@ -432,10 +575,12 @@ def cor_icon(h_m, t_m, h_v, t_v) -> str:
         return "🟡"
     return "🔴"
 
+
 def format_stats(h_m, t_m, h_v, t_v) -> str:
     """Formata estatísticas com ícones de cor."""
     icon = cor_icon(h_m, t_m, h_v, t_v)
     return f"{icon} {h_m}/{t_m}\n{h_v}/{t_v}"
+
 
 def format_gols_ht_com_icone_para_display(gols_ht_media: float) -> str:
     """Formata a média de gols HT com ícone de cor."""
@@ -444,6 +589,7 @@ def format_gols_ht_com_icone_para_display(gols_ht_media: float) -> str:
     elif 2.62 <= gols_ht_media <= 2.74:
         return f"🟡 {gols_ht_media:.2f}"
     return f"⚪ {gols_ht_media:.2f}"
+
 
 def sugerir_over_ht(media_gols_ht: float) -> str:
     """Sugere um mercado Over HT com base na média de gols HT."""
@@ -455,6 +601,7 @@ def sugerir_over_ht(media_gols_ht: float) -> str:
         return "Over 0.5 HT"
     else:
         return "Sem Entrada"
+
 
 def gerar_ranking(
         df_stats_base: pd.DataFrame,
@@ -513,6 +660,7 @@ def gerar_ranking(
 
     return df_final
 
+
 # Processamento de Dados Ao Vivo
 @st.cache_data(show_spinner=False, ttl=300)
 def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -538,11 +686,10 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
         if df.empty:
             return pd.DataFrame(), pd.DataFrame()
 
-        df = df.drop(columns=[1]) # Drop the second column (index 1)
+        df = df.drop(columns=[1])  # Drop the second column (index 1)
         df.columns = ["Hora", "Confronto", "Liga"] + [
             f"Coluna {i}" for i in range(4, df.shape[1] + 1)
         ]
-
 
         def extrair_jogadores(txt: str):
             base = str(txt).replace("Ao Vivo Agora", "").strip()
@@ -605,7 +752,7 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
                     return f"{player_name}  1.5 Gols"
                 elif 3.40 <= avg_goals <= 4.50:
                     return f"{player_name}  2.5 Gols"
-                return "Instável" # Or an empty string if you prefer no output for other ranges
+                return "Instável"  # Or an empty string if you prefer no output for other ranges
 
             over_mandante_text = get_over_text(m, gp_calc)
             over_visitante_text = get_over_text(v, gc_calc)
@@ -621,20 +768,20 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
                     "Gols FT": gols_ft_media_confronto,
                     "Sugestão HT": sugestao_ht,
                     "Sugestão FT": sugestao_ft,
-                    "Over Mandante": over_mandante_text, # Adicionado
-                    "Over Visitante": over_visitante_text, # Adicionado
-                    "0.5 HT": format_stats(sm["over_05_ht"], jm, sv["over_05_ht"], jv),
-                    "1.5 HT": format_stats(sm["over_15_ht"], jm, sv["over_15_ht"], jv),
-                    "2.5 HT": format_stats(sm["over_25_ht"], jm, sv["over_25_ht"], jv),
-                    "BTTS HT": format_stats(sm["btts_ht"], jm, sv["btts_ht"], jv),
-                    "BTTS FT": format_stats(sm["btts_ft"], jm, sv["btts_ft"], jv),
-                    "0.5 FT": format_stats(sm["over_05_ft"], jm, sv["over_05_ft"], jv),
-                    "1.5 FT": format_stats(sm["over_15_ft"], jm, sv["over_15_ft"], jv),
-                    "2.5 FT": format_stats(sm["over_25_ft"], jm, sv["over_25_ft"], jv),
-                    "3.5 FT": format_stats(sm["over_35_ft"], jm, sv["over_35_ft"], jv),
-                    "4.5 FT": format_stats(sm["over_45_ft"], jm, sv["over_45_ft"], jv),
-                    "5.5 FT": format_stats(sm["over_55_ft"], jm, sv["over_55_ft"], jv),
-                    "6.5 FT": format_stats(sm["over_65_ft"], jm, sv["over_65_ft"], jv),
+                    "Over Mandante": over_mandante_text,  # Adicionado
+                    "Over Visitante": over_visitante_text,  # Adicionado
+                    "0.5 HT": format_stats(sm["over_05_ht_hits"], jm, sv["over_05_ht_hits"], jv),
+                    "1.5 HT": format_stats(sm["over_15_ht_hits"], jm, sv["over_15_ht_hits"], jv),
+                    "2.5 HT": format_stats(sm["over_25_ht_hits"], jm, sv["over_25_ht_hits"], jv),
+                    "BTTS HT": format_stats(sm["btts_ht_hits"], jm, sv["btts_ht_hits"], jv),
+                    "BTTS FT": format_stats(sm["btts_ft_hits"], jm, sv["btts_ft_hits"], jv),
+                    "0.5 FT": format_stats(sm["over_05_ft_hits"], jm, sv["over_05_ft_hits"], jv),
+                    "1.5 FT": format_stats(sm["over_15_ft_hits"], jm, sv["over_15_ft_hits"], jv),
+                    "2.5 FT": format_stats(sm["over_25_ft_hits"], jm, sv["over_25_ft_hits"], jv),
+                    "3.5 FT": format_stats(sm["over_35_ft_hits"], jm, sv["over_35_ft_hits"], jv),
+                    "4.5 FT": format_stats(sm["over_45_ft_hits"], jm, sv["over_45_ft_hits"], jv),
+                    "5.5 FT": format_stats(sm["over_55_ft_hits"], jm, sv["over_55_ft_hits"], jv),
+                    "6.5 FT": format_stats(sm["over_65_ft_hits"], jm, sv["over_65_ft_hits"], jv),
                 }
             )
 
@@ -651,7 +798,7 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
 
         colunas_ao_vivo_solicitadas = [
             "Hora", "Liga", "Mandante", "Visitante", "GP", "GC",
-            "Over Mandante", "Over Visitante", # Adicionadas ao display
+            "Over Mandante", "Over Visitante",  # Adicionadas ao display
             "Sugestão HT", "Sugestão FT"
         ]
 
@@ -721,6 +868,7 @@ def calcular_radar_fifa(df_live_clean: pd.DataFrame) -> pd.DataFrame:
 
     return df_radar
 
+
 # Função de Carga de Dados Essenciais
 @st.cache_data(show_spinner=False, ttl=300)
 def carregar_todos_os_dados_essenciais(flag: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -728,6 +876,7 @@ def carregar_todos_os_dados_essenciais(flag: int) -> tuple[pd.DataFrame, pd.Data
     df_resultados = buscar_resultados()
     df_live_clean, df_live_display = carregar_dados_ao_vivo(df_resultados)
     return df_resultados, df_live_clean, df_live_display
+
 
 # Componentes Visuais do Streamlit
 def exibir_estatisticas_partidas(df: pd.DataFrame, titulo: str) -> None:
@@ -753,508 +902,506 @@ def exibir_estatisticas_partidas(df: pd.DataFrame, titulo: str) -> None:
 
     st.dataframe(df, use_container_width=True, height=430)
 
+
 def get_color_for_percentage(percentage_str: str) -> str:
-    """Retorna uma cor HTML baseada no valor percentual."""
-    try:
-        percentage = int(percentage_str.replace('%', ''))
-        if percentage >= 80:
-            return "#28a745"  # Green
-        elif 68 <= percentage <= 79:
-            return "#ffc107"  # Yellow (Amber)
-        else:
-            return "#dc3545"  # Red
-    except ValueError:
-        return "#6c757d"  # Grey for invalid percentage
-
-def get_logo_path(league_name: str) -> str:
-    """Retorna o URL do logotipo da liga."""
-    logo_map = {
-        "Battle 8 Min": "https://i.imgur.com/65W1s9k.png",  # Esports Battle
-        "GT 12 Min": "https://i.imgur.com/65W1s9k.png",  # GT Leagues
-        "Volta 6 Min": "https://i.imgur.com/65W1s9k.png",  # Volta Football
-        "H2H 8 Min": "https://i.imgur.com/65W1s9k.png",  # Exemplo de URL para H2H 8 Min
-    }
-    return logo_map.get(league_name, "https://i.imgur.com/placeholder.png") # Retorna um placeholder se a liga não for encontrada
-
-
-def exibir_radar_fifa(df_radar: pd.DataFrame) -> None:
-    """Exibe a tabela do radar FIFA com porcentagens de Over e BTTS."""
-    if df_radar.empty:
-        st.info("🔍 Nenhum dado de radar encontrado.")
-        return
-
-    # Adicionar o logo na coluna da Liga
-    df_radar_display = df_radar.copy()
-    df_radar_display["Liga"] = df_radar_display["Liga"].apply(
-        lambda x: f'<div style="display: flex; align-items: center;">'
-                  f'<img src="{get_logo_path(x)}" width="20" style="margin-right: 5px;"> {x}'
-                  f'</div>'
-    )
-
-    # Função para aplicar a cor aos percentuais
-    def format_percentage_with_color(val):
-        if isinstance(val, str) and '%' in val:
-            color = get_color_for_percentage(val)
-            return f'<span style="color:{color};"><b>{val}</b></span>'
-        return val
-
-    # Aplica a formatação de cor a todas as colunas de percentual
-    for col in df_radar_display.columns:
-        if col != "Liga":
-            df_radar_display[col] = df_radar_display[col].apply(format_percentage_with_color)
-
-    st.markdown(
-        df_radar_display.to_html(escape=False, index=False),
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        """
-        <style>
-        /* Estilos para o tema escuro */
-        body {
-            background-color: #0e1117; /* Fundo escuro */
-            color: #fafafa; /* Cor do texto principal */
-        }
-        .stMarkdown {
-            color: #fafafa; /* Garante que o Markdown tenha cor clara */
-        }
-        h1, h2, h3, h4, h5, h6 {
-            color: #e0e0e0; /* Títulos um pouco mais claros para contraste */
-        }
-        /* Estilo da tabela do radar */
-        .dataframe {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.9em;
-            text-align: center;
-            color: #e0e0e0; /* Cor do texto da tabela */
-        }
-        .dataframe th {
-            background-color: #262626; /* Fundo do cabeçalho da tabela mais escuro */
-            padding: 10px;
-            border: 1px solid #333; /* Borda mais escura */
-            color: #f0f0f0; /* Cor do texto do cabeçalho */
-        }
-        .dataframe td {
-            padding: 8px;
-            border: 1px solid #333; /* Borda mais escura */
-            vertical-align: middle;
-            background-color: #1a1a1a; /* Fundo das células da tabela */
-        }
-        .dataframe tr:nth-child(even) {
-            background-color: #1a1a1a; /* Fundo de linhas pares */
-        }
-        .dataframe tr:nth-child(odd) {
-            background-color: #212121; /* Fundo de linhas ímpares para contraste */
-        }
-        .dataframe tr:hover {
-            background-color: #2c2c2c; /* Fundo ao passar o mouse */
-        }
-        .stMetric {
-            background-color: #1a1a1a; /* Fundo dos cards de métricas */
-            border-radius: 8px;
-            padding: 15px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-            color: #e0e0e0;
-        }
-        .stMetric > div > div > div:first-child {
-            color: #bb86fc; /* Cor do título da métrica (roxa) */
-            font-weight: bold;
-        }
-        .stMetric > div > div > div:nth-child(2) {
-            color: #03dac6; /* Cor do valor da métrica (ciano) */
-            font-size: 1.8em;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-
-
-def exibir_rankings(df_stats_base: pd.DataFrame) -> None:
-    """Exibe os rankings de jogadores."""
-    if df_stats_base.empty:
-        st.info("🔍 Nenhum dado de estatísticas de jogadores encontrado para gerar rankings.")
-        return
-
-    st.subheader("🏆 Melhores e Piores Jogadores (Geral)")
-
-    # Aba para Melhores
-    tab_melhores, tab_piores = st.tabs(["👍 Melhores", "👎 Piores"])
-
-    with tab_melhores:
-        st.write("---")
-        st.markdown("##### Maiores Gols Marcados")
-        ranking_maiores_gols_marcados = gerar_ranking(
-            df_stats_base,
-            metrica_principal="Gols Marcados Média",
-            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Gols Marcados Média"],
-            nomes_para_exibicao={
-                "jogos_total": "Total de Jogos",
-                "Gols Marcados Média": "Média Gols Marcados"
-            },
-            ascendente=False,
-        )
-        st.dataframe(ranking_maiores_gols_marcados, use_container_width=True)
-
-        st.write("---")
-        st.markdown("##### Maiores Win Rate")
-        ranking_maiores_win_rate = gerar_ranking(
-            df_stats_base,
-            metrica_principal="Win Rate (%)",
-            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Win Rate (%)"],
-            nomes_para_exibicao={
-                "jogos_total": "Total de Jogos",
-                "Win Rate (%)": "Win Rate (%)"
-            },
-            ascendente=False,
-        )
-        st.dataframe(ranking_maiores_win_rate, use_container_width=True)
-
-        st.write("---")
-        st.markdown("##### Maiores Saldo de Gols")
-        ranking_maiores_saldo_gols = gerar_ranking(
-            df_stats_base,
-            metrica_principal="Saldo de Gols",
-            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Saldo de Gols"],
-            nomes_para_exibicao={
-                "jogos_total": "Total de Jogos",
-                "Saldo de Gols": "Saldo de Gols"
-            },
-            ascendente=False,
-        )
-        st.dataframe(ranking_maiores_saldo_gols, use_container_width=True)
-
-        st.write("---")
-        st.markdown("##### Maiores Over 2.5 FT (%)")
-        ranking_maiores_over25ft = gerar_ranking(
-            df_stats_base,
-            metrica_principal="Over 2.5 FT (%)",
-            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Over 2.5 FT (%)"],
-            nomes_para_exibicao={
-                "jogos_total": "Total de Jogos",
-                "Over 2.5 FT (%)": "Over 2.5 FT (%)"
-            },
-            ascendente=False,
-        )
-        st.dataframe(ranking_maiores_over25ft, use_container_width=True)
-
-        st.write("---")
-        st.markdown("##### Maiores BTTS FT (%)")
-        ranking_maiores_btts_ft = gerar_ranking(
-            df_stats_base,
-            metrica_principal="BTTS FT (%)",
-            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "BTTS FT (%)"],
-            nomes_para_exibicao={
-                "jogos_total": "Total de Jogos",
-                "BTTS FT (%)": "BTTS FT (%)"
-            },
-            ascendente=False,
-        )
-        st.dataframe(ranking_maiores_btts_ft, use_container_width=True)
-
-    with tab_piores:
-        st.write("---")
-        st.markdown("##### Piores Gols Sofridos (Média)")
-        ranking_piores_gols_sofridos = gerar_ranking(
-            df_stats_base,
-            metrica_principal="Gols Sofridos Média",
-            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Gols Sofridos Média"],
-            nomes_para_exibicao={
-                "jogos_total": "Total de Jogos",
-                "Gols Sofridos Média": "Média Gols Sofridos"
-            },
-            ascendente=False,
-        )
-        st.dataframe(ranking_piores_gols_sofridos, use_container_width=True)
-
-        st.write("---")
-        st.markdown("##### Piores Win Rate")
-        ranking_piores_win_rate = gerar_ranking(
-            df_stats_base,
-            metrica_principal="Win Rate (%)",
-            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Win Rate (%)"],
-            nomes_para_exibicao={
-                "jogos_total": "Total de Jogos",
-                "Win Rate (%)": "Win Rate (%)"
-            },
-            ascendente=True, # Piores significa menor Win Rate
-        )
-        st.dataframe(ranking_piores_win_rate, use_container_width=True)
-
-        st.write("---")
-        st.markdown("##### Piores Saldo de Gols")
-        ranking_piores_saldo_gols = gerar_ranking(
-            df_stats_base,
-            metrica_principal="Saldo de Gols",
-            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Saldo de Gols"],
-            nomes_para_exibicao={
-                "jogos_total": "Total de Jogos",
-                "Saldo de Gols": "Saldo de Gols"
-            },
-            ascendente=True, # Piores significa menor Saldo de Gols
-        )
-        st.dataframe(ranking_piores_saldo_gols, use_container_width=True)
-
-        st.write("---")
-        st.markdown("##### Piores Over 2.5 FT (%)")
-        ranking_piores_over25ft = gerar_ranking(
-            df_stats_base,
-            metrica_principal="Over 2.5 FT (%)",
-            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "Over 2.5 FT (%)"],
-            nomes_para_exibicao={
-                "jogos_total": "Total de Jogos",
-                "Over 2.5 FT (%)": "Over 2.5 FT (%)"
-            },
-            ascendente=True, # Piores significa menor Over 2.5 FT
-        )
-        st.dataframe(ranking_piores_over25ft, use_container_width=True)
-
-        st.write("---")
-        st.markdown("##### Piores BTTS FT (%)")
-        ranking_piores_btts_ft = gerar_ranking(
-            df_stats_base,
-            metrica_principal="BTTS FT (%)",
-            colunas_exibicao=["Jogador", "Ligas Atuantes", "jogos_total", "BTTS FT (%)"],
-            nomes_para_exibicao={
-                "jogos_total": "Total de Jogos",
-                "BTTS FT (%)": "BTTS FT (%)"
-            },
-            ascendente=True, # Piores significa menor BTTS FT
-        )
-        st.dataframe(ranking_piores_btts_ft, use_container_width=True)
-
-
-def exibir_sobre() -> None:
-    """Exibe informações sobre o projeto."""
-    st.subheader("🌟 Sobre")
-    st.markdown(
-        """
-        Este aplicativo foi desenvolvido para fornecer **estatísticas e análises** de jogos FIFA,
-        com foco nas ligas de E-soccer (H2H, GT Leagues, Battle e Volta).
-        Ele busca dados de partidas ao vivo e históricas para ajudar na tomada de decisões.
-
-        ### Funcionalidades Principais:
-        - **Ao Vivo:** Acompanhe jogos em tempo real com sugestões de Over Players,HT e FT.
-        - **Resultados:** Visualize um histórico detalhado das partidas do dia.
-        - **Radar FIFA:** Analise a tendência de Overs gols nos mercados HT & FT das ligas em tempo real.
-        - **Rankings:** Descubra os melhores e piores jogadores com base em diversas métricas.
-
-        ### Desenvolvedor:
-        - **Vagner Sembrani**
-
-        ### Feedback e Sugestões:
-        Sua opinião é muito importante! Se tiver sugestões ou encontrar algum problema, entre em contato.
-        """
-    )
-
-# --- Configuração do Layout do Streamlit ---
-st.set_page_config(
-    page_title="FIFA Stats - Vagner S.",
-    page_icon="⚽",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-# Injeção de CSS personalizado para o tema escuro
-st.markdown(
     """
-    <style>
-    /* Estilos Gerais para o tema escuro */
-    .stApp {
-        background-color: #0e1117; /* Cor de fundo principal mais escura */
-        color: #fafafa; /* Cor de texto padrão mais clara */
-    }
-    .st-emotion-cache-1r6dm7m { /* Sidebar background */
-        background-color: #1a1a1a;
-    }
-    .st-emotion-cache-1r6dm7m .st-bw { /* Links na sidebar */
-        color: #bb86fc; /* Cor de link para um toque mais moderno */
-    }
-    .st-emotion-cache-1r6dm7m .st-dq { /* Título na sidebar */
-        color: #f0f0f0;
-    }
+    Retorna uma string CSS para aplicar cor de fundo baseada no valor percentual.
+    Corrigido para retornar a propriedade CSS completa.
+    """
+    try:
+        # Remove o '%' e converte para int. Se não for numérico, assume 0.
+        percentage = int(percentage_str.replace('%', ''))
+    except ValueError:
+        percentage = 0  # Default to 0 for non-numeric values or "N/A"
 
-    /* Estilo para as métricas (st.metric) - Mantido, mas pode ser mais genérico */
-    .stMetric {
-        background-color: #1a1a1a; /* Fundo dos cards de métricas */
-        border-radius: 8px;
-        padding: 15px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-        color: #e0e0e0;
-    }
-    .stMetric > div > div > div:first-child {
-        color: #bb86fc; /* Cor do título da métrica (roxa) */
-        font-weight: bold;
-    }
-    .stMetric > div > div > div:nth-child(2) {
-        color: #03dac6; /* Cor do valor da métrica (ciano) */
-        font-size: 1.8em;
-    }
-
-    /* Estilo para o novo card de atualização (st.info customizado) */
-    .custom-info-card {
-        background-color: #1a1a1a; /* Fundo escuro do card */
-        border-radius: 10px;
-        padding: 15px 20px;
-        margin-bottom: 20px; /* Espaço abaixo do card */
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); /* Sombra mais destacada */
-        display: flex;
-        align-items: center;
-        gap: 15px; /* Espaço entre ícone e texto */
-        color: #e0e0e0; /* Cor do texto */
-        font-size: 1.1em;
-        font-weight: bold;
-        border: 1px solid #333; /* Borda sutil */
-    }
-    .custom-info-card .icon {
-        font-size: 2.2em; /* Tamanho maior para o ícone */
-        color: #03dac6; /* Cor do ícone (ciano) */
-        line-height: 1; /* Alinhamento vertical */
-    }
-    .custom-info-card .text {
-        flex-grow: 1; /* Permite que o texto ocupe o espaço restante */
-    }
-    .custom-info-card .datetime {
-        font-size: 1.2em;
-        color: #bb86fc; /* Cor do timestamp (roxo) */
-    }
+    if percentage >= 80:
+        return "background-color: #28a745"  # Green
+    elif percentage >= 60:
+        return "background-color: #ffc107"  # Yellow
+    else:
+        return "background-color: #dc3545"  # Red
 
 
-    /* Estilo para os cabeçalhos de seção */
-    h1, h2, h3, h4, h5, h6 {
-        color: #e0e0e0; /* Cor dos títulos para melhor contraste */
-    }
-
-    /* Estilo para abas (tabs) */
-    .stTabs [data-baseweb="tab-list"] button [data-testid="stMarkdownContainer"] p {
-        font-size: 1.1rem;
-        color: #bb86fc; /* Cor do texto das abas */
-    }
-    .stTabs [data-baseweb="tab-list"] button.st-emotion-cache-fnmr37 { /* Aba selecionada */
-        background-color: #333333;
-        color: #f0f0f0; /* Cor do texto da aba selecionada */
-        border-bottom: 2px solid #03dac6; /* Borda inferior ciano */
-    }
-    .stTabs [data-baseweb="tab-list"] button {
-        background-color: #212121; /* Fundo das abas não selecionadas */
-        color: #bb86fc; /* Cor do texto das abas não selecionadas */
-    }
+def get_color_for_profit(value):
+    """
+    Retorna uma string CSS para colorir o lucro/prejuízo.
+    """
+    try:
+        num_value = float(value)
+        if num_value > 0:
+            return 'color: green; font-weight: bold;'  # Positivo
+        elif num_value < 0:
+            return 'color: red; font-weight: bold;'  # Negativo
+        else:
+            return 'color: orange; font-weight: bold;'  # Neutro (ou pode ser 'color: black' se preferir)
+    except ValueError:
+        return ''  # Sem estilo para valores não numéricos (ex: N/A)
 
 
-    /* Estilos para a tabela do radar FIFA (já estava no código) */
-    .dataframe {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.9em;
-        text-align: center;
-        color: #e0e0e0;
-    }
-    .dataframe th {
-        background-color: #262626;
-        padding: 10px;
-        border: 1px solid #333;
-        color: #f0f0f0;
-    }
-    .dataframe td {
-        padding: 8px;
-        border: 1px solid #333;
-        vertical-align: middle;
-        background-color: #1a1a1a;
-    }
-    .dataframe tr:nth-child(even) {
-        background-color: #1a1a1a;
-    }
-    .dataframe tr:nth-child(odd) {
-        background-color: #212121;
-    }
-    .dataframe tr:hover {
-        background-color: #2c2c2c;
-    }
+def display_metrics_for_player(df_player_stats: pd.DataFrame, player_name: str, default_odds: float = 1.90):
+    """
+    Calculates and displays 'Taxa de Acerto (%)' and 'Lucro/Prejuizo (Unidades)'
+    para os mercados específicos: Vitória, Over 1.5 HT, Over 2.5 FT e BTTS FT.
+    """
+    # Limpa o nome do jogador (remove emojis de medalha se houver)
+    cleaned_player_name = re.sub(r'^[🥇🥈🥉]\s', '', player_name)
 
-    /* Ajustes para o st.info padrão (caso ainda seja usado em outro lugar) */
-    .stAlert p {
-        color: #f0f0f0 !important; /* Garante que o texto do st.info seja claro */
-    }
-    .stAlert.info-alert {
-        background-color: #2a2a2a; /* Fundo mais escuro para info */
-        border-left: 5px solid #2196F3; /* Borda azul para info */
-        color: #f0f0f0;
-    }
+    # Filtra os dados do jogador
+    player_data_row = df_player_stats[df_player_stats["Jogador"] == cleaned_player_name]
 
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+    if player_data_row.empty:
+        st.info(f"Não há dados suficientes para calcular Ganhos & Perdas para {player_name}.")
+        return
 
-# Sidebar
-with st.sidebar:
-    st.image("https://i.imgur.com/neR5gSO.png", width=150) # Substitua pela sua imagem de logo
-    st.title("  🎮 SIMULADOR FIFA")
+    player_data = player_data_row.iloc[0]  # Pega a primeira linha correspondente
+    jogos_total = player_data["jogos_total"]
+
+    # Mostra o total de jogos do jogador
+    st.subheader(f"Estatísticas para {player_name} (Total de Jogos: {jogos_total})")
+
+    if jogos_total == 0:
+        st.info(f"Não há jogos registrados para {player_name}.")
+        return
+
+    # Define os mercados que queremos analisar
+    market_data = [
+        {
+            "Mercado": "Vitória do Jogador",
+            "Acertos": player_data["vitorias"],
+            "Jogos": jogos_total
+        },
+        {
+            "Mercado": "Jogos Over 1.5 HT",
+            "Acertos": player_data["over_15_ht_hits"],
+            "Jogos": jogos_total
+        },
+        {
+            "Mercado": "Jogos Over 2.5 FT",
+            "Acertos": player_data["over_25_ft_hits"],
+            "Jogos": jogos_total
+        },
+        {
+            "Mercado": "Jogos BTTS FT",
+            "Acertos": player_data["btts_ft_hits"],
+            "Jogos": jogos_total
+        }
+    ]
+
+    # Calcula taxa de acerto e lucro/prejuízo para cada mercado
+    results = []
+    for market in market_data:
+        hits = market["Acertos"]
+        total_games = market["Jogos"]
+        hit_rate = (hits / total_games) * 100 if total_games > 0 else 0
+        profit_loss = (hits * (default_odds - 1)) - ((total_games - hits) * 1)
+
+        results.append({
+            "Mercado": market["Mercado"],
+            "Jogos Analisados": total_games,
+            "Acertos": hits,
+            "Taxa de Acerto (%)": hit_rate,
+            "Lucro/Prejuízo (Unidades)": profit_loss
+        })
+
+    df_results = pd.DataFrame(results)
+
+    # Aplica formatação condicional
+    styled_df = df_results.style.applymap(
+        lambda x: 'color: green; font-weight: bold;' if isinstance(x, (int, float)) and x > 0 else
+        ('color: red; font-weight: bold;' if isinstance(x, (int, float)) and x < 0 else ''),
+        subset=['Lucro/Prejuízo (Unidades)']
+    ).format({
+        'Taxa de Acerto (%)': "{:.2f}%",
+        'Lucro/Prejuízo (Unidades)': "{:.2f}"
+    })
+
+    # Exibe a tabela formatada
+    st.dataframe(styled_df, use_container_width=True)
+
+    # --- Top 3 Dicas de Aposta ---
+    st.markdown("---")
+    st.subheader("📊 Análise de Mercados para este Jogador:")
+
+    # Filtra apenas os mercados que queremos considerar para as dicas
+    df_top_tips = df_results[df_results["Mercado"].isin([
+        "Vitória do Jogador",
+        "Jogos Over 1.5 HT",
+        "Jogos Over 2.5 FT",
+        "Jogos BTTS FT"
+    ])].copy()
+
+    # Ordena por lucro potencial (do maior para o menor)
+    df_top_tips = df_top_tips.sort_values("Lucro/Prejuízo (Unidades)", ascending=False)
+
+    # Exibe análise para cada mercado
+    for _, row in df_top_tips.iterrows():
+        profit = row["Lucro/Prejuízo (Unidades)"]
+        hit_rate = row["Taxa de Acerto (%)"]
+
+        if profit > 0:
+            st.success(
+                f"✅ **{row['Mercado']}**: "
+                f"Lucrativo com {hit_rate:.2f}% de acerto. "
+                f"Lucro esperado: **{profit:.2f} unidades** "
+                f"(em {row['Jogos Analisados']} jogos)"
+            )
+        else:
+            st.error(
+                f"❌ **{row['Mercado']}**: "
+                f"Prejuízo com {hit_rate:.2f}% de acerto. "
+                f"Perda esperada: **{profit:.2f} unidades** "
+                f"(em {row['Jogos Analisados']} jogos)"
+            )
+
+
+def perform_manual_analysis(df_resultados: pd.DataFrame, player1: str, player2: str, num_games_h2h: int,
+                            num_games_individual: int):
+    st.subheader(f"Análise Manual para **{player1}** vs **{player2}**")
+
+    if df_resultados.empty:
+        st.warning("⚠️ Não há dados de resultados históricos disponíveis para análise.")
+        return
+
+    # Limpa os nomes dos jogadores para buscar nas estatísticas (remover medalhas se presentes)
+    player1_clean = re.sub(r'^[🥇🥈🥉]\s', '', player1)
+    player2_clean = re.sub(r'^[🥇🥈🥉]\s', '', player2)
+
+    # --- Estatísticas Individuais Recentes (Últimas N partidas) ---
+    st.markdown("---")
+    st.header("📈 Desempenho Individual Recente")
+    col_p1_stats, col_p2_stats = st.columns(2)
+
+    stats_p1_recent = get_recent_player_stats(df_resultados, player1_clean, num_games_individual)
+    stats_p2_recent = get_recent_player_stats(df_resultados, player2_clean, num_games_individual)
+
+    def display_individual_stats(player_name_display: str, stats: dict):
+        if not stats:
+            st.info(f"Não há dados recentes para **{player_name_display}** nos últimos {num_games_individual} jogos.")
+            return
+
+        st.markdown(f"### **{player_name_display}** (Últimos {stats['jogos_recentes']} jogos)")
+        st.metric("Total de Jogos Analisados", stats['jogos_recentes'])
+
+        st.write("**Força de Ataque (Média Gols Marcados):**")
+        st.info(f"**FT:** {stats['media_gols_marcados_ft']:.2f} gols/jogo")
+        st.info(f"**HT:** {stats['media_gols_marcados_ht']:.2f} gols/jogo")
+
+        st.write("**Força de Defesa (Média Gols Sofridos):**")
+        st.success(f"**FT:** {stats['media_gols_sofridos_ft']:.2f} gols/jogo")
+        st.success(f"**HT:** {stats['media_gols_sofridos_ht']:.2f} gols/jogo")
+
+        st.write("**Tendências de Gols:**")
+        st.markdown(f"- **Over 0.5 HT:** {stats['pct_over_05_ht']:.2f}% dos jogos")
+        st.markdown(f"- **Over 1.5 HT:** {stats['pct_over_15_ht']:.2f}% dos jogos")
+        st.markdown(f"- **Over 2.5 HT:** {stats['pct_over_25_ht']:.2f}% dos jogos")
+        st.markdown(f"- **Over 2.5 FT:** {stats['pct_over_25_ft']:.2f}% dos jogos")
+        st.markdown(f"- **Under 2.5 FT:** {stats['pct_under_25_ft']:.2f}% dos jogos")
+        st.markdown(f"- **BTTS FT:** {stats['pct_btts_ft']:.2f}% dos jogos")
+
+        st.write("**Sequências Atuais:**")
+        st.markdown(f"- Vitórias: {stats['sequencia_vitorias']} jogo(s)")
+        st.markdown(f"- Derrotas: {stats['sequencia_derrotas']} jogo(s)")
+        st.markdown(f"- Empates: {stats['sequencia_empates']} jogo(s)")
+        st.markdown(f"- BTTS FT: {stats['sequencia_btts']} jogo(s) seguidos")
+        st.markdown(f"- Over 2.5 FT: {stats['sequencia_over_25_ft']} jogo(s) seguidos")
+
+        st.write("**Gols Marcados HT vs FT:**")
+        if stats['media_gols_marcados_ht'] > stats[
+            'media_gols_marcados_ft'] / 2:  # heuristic: if HT goals are more than half of FT goals
+            st.warning("Parece que marca mais gols no **Primeiro Tempo**.")
+        else:
+            st.warning("Parece que se destaca mais marcando gols no **Segundo Tempo**.")
+
+    with col_p1_stats:
+        display_individual_stats(player1, stats_p1_recent)
+
+    with col_p2_stats:
+        display_individual_stats(player2, stats_p2_recent)
+
+    # --- Confrontos Diretos Recentes ---
+    st.markdown("---")
+    st.header("⚔️ Confrontos Diretos Recentes")
+
+    filtered_df_p1_p2 = df_resultados[
+        ((df_resultados["Mandante"] == player1_clean) & (df_resultados["Visitante"] == player2_clean)) |
+        ((df_resultados["Mandante"] == player2_clean) & (df_resultados["Visitante"] == player1_clean))
+        ].tail(num_games_h2h)  # Pega os 'num_games_h2h' mais recentes
+
+    if filtered_df_p1_p2.empty:
+        st.info(
+            f"Não foram encontrados jogos recentes entre **{player1}** e **{player2}** nos últimos **{num_games_h2h}** confrontos diretos.")
+        return
+
+    st.write(f"Últimos **{len(filtered_df_p1_p2)}** confrontos diretos:")
+    st.dataframe(filtered_df_p1_p2[
+                     ["Data", "Liga", "Mandante", "Visitante", "Mandante FT", "Visitante FT", "Mandante HT",
+                      "Visitante HT"]], use_container_width=True)
+
+    # Calcular estatísticas médias para o confronto direto
+    total_gols_ht_h2h = filtered_df_p1_p2["Total HT"].sum()
+    total_gols_ft_h2h = filtered_df_p1_p2["Total FT"].sum()
+
+    media_gols_ht_confronto = total_gols_ht_h2h / len(filtered_df_p1_p2) if len(filtered_df_p1_p2) > 0 else 0
+    media_gols_ft_confronto = total_gols_ft_h2h / len(filtered_df_p1_p2) if len(filtered_df_p1_p2) > 0 else 0
+
+    st.markdown("---")
+    st.subheader("Média de Gols no Confronto Direto:")
+    col_mg_ht, col_mg_ft = st.columns(2)
+    col_mg_ht.metric("Média de Gols HT", f"{media_gols_ht_confronto:.2f}")
+    col_mg_ft.metric("Média de Gols FT", f"{media_gols_ft_confronto:.2f}")
+
+    # --- Dicas de Apostas (Melhores Linhas de Over) ---
+    st.markdown("---")
+    st.header("🎯 Dicas de Apostas para esta Partida:")
+
+    def get_best_over_line(media_gols: float, period: str) -> str:
+        if period == "HT":
+            if media_gols >= 2.75:
+                return "Over 2.5 HT"
+            elif media_gols >= 2.20:
+                return "Over 1.5 HT"
+            elif media_gols >= 1.70:
+                return "Over 0.5 HT"
+            else:
+                return "Sem entrada Over HT clara"
+        elif period == "FT":
+            if media_gols >= 6.70:
+                return "Over 5.5 FT"
+            elif media_gols >= 5.70:
+                return "Over 4.5 FT"
+            elif media_gols >= 4.50:
+                return "Over 3.5 FT"
+            elif media_gols >= 3.45:
+                return "Over 2.5 FT"
+            elif media_gols >= 2.40:
+                return "Over 1.5 FT"
+            elif media_gols >= 2.00:
+                return "Over 0.5 FT"
+            else:
+                return "Sem entrada Over FT clara"
+        return "N/A"
+
+    best_line_ht = get_best_over_line(media_gols_ht_confronto, "HT")
+    best_line_ft = get_best_over_line(media_gols_ft_confronto, "FT")
+
+    st.markdown(f"**Sugestão HT:** **{best_line_ht}**")
+    st.markdown(f"**Sugestão FT:** **{best_line_ft}**")
+
+    # Adicionar BTTS FT se a taxa for alta para ambos e no confronto
+    if stats_p1_recent.get('pct_btts_ft', 0) >= 60 and stats_p2_recent.get('pct_btts_ft', 0) >= 60:
+        btts_confronto_hits = ((filtered_df_p1_p2["Mandante FT"] > 0) & (filtered_df_p1_p2["Visitante FT"] > 0)).sum()
+        btts_confronto_percent = (btts_confronto_hits / len(filtered_df_p1_p2)) * 100 if len(
+            filtered_df_p1_p2) > 0 else 0
+        if btts_confronto_percent >= 60:
+            st.markdown(
+                f"**Sugestão Adicional:** **Ambos Marcam (BTTS FT)** com {btts_confronto_percent:.2f}% de acerto nos confrontos diretos.")
+
     st.markdown("---")
 
-    aba_selecionada = st.radio(
-        "Menu",
-        ["Ao Vivo", "Resultados", "Radar FIFA", "Rankings", "Sobre"],
-        index=0,
-        help="Selecione a seção que deseja visualizar.",
-        key="main_navigation"
+
+def app():
+    st.set_page_config(
+        page_title="SIMULADOR FIFA ESOCCER",
+        layout="wide",
+        initial_sidebar_state="expanded",
     )
-    st.markdown("---")
 
-    # st_autorefresh mantido para o cache TTL funcionar, sem o argumento display_spinner
-    # O TTL (Time To Live) de 300 segundos (5 minutos) no @st.cache_data fará com que os dados sejam buscados
-    # novamente a cada 5 minutos, garantindo que o "Última atualização" no topo da tela principal
-    # seja atualizado e os dados também.
-    st_autorefresh(interval=300 * 1000, key="data_refresh_hidden")
+    st.title("🎮 SIMULADOR FIFA ESOCCER")
+
+    brasil_timezone = pytz.timezone("America/Sao_Paulo")
+    current_time_br = datetime.now(brasil_timezone).strftime("%H:%M:%S")
+
+    st.markdown(f"**Última atualização:** {current_time_br}")
+
+    # Auto-refresh every 60 seconds
+    st_autorefresh(interval=60 * 1000, key="data_refresh")
+
+    # Flag to control data reload
+    if "reload_flag" not in st.session_state:
+        st.session_state.reload_flag = 0
+
+    df_resultados, df_live_clean, df_live_display = carregar_todos_os_dados_essenciais(st.session_state.reload_flag)
+    df_stats_all_players = calcular_estatisticas_todos_jogadores(
+        df_resultados)  # Carrega as estatísticas de todos os jogadores aqui
+
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Ao Vivo", "📈 Rankings", "💰 Ganhos & Perdas", "🔍 Análise Manual"])
+
+    with tab1:
+        st.header("Jogos Ao Vivo")
+        exibir_estatisticas_partidas(df_live_display, "Jogos ao Vivo")
+        st.markdown("---")
+        st.header("Radar FIFA - Analises em tempo real das ligas")
+        df_radar = calcular_radar_fifa(df_live_clean)
+        if not df_radar.empty:
+            st.dataframe(
+                df_radar.style.map(get_color_for_percentage, subset=pd.IndexSlice[:, df_radar.columns.drop('Liga')]),
+                use_container_width=True
+            )
+        else:
+            st.info("Nenhum dado para o Radar FIFA.")
+
+    with tab2:
+        st.header("Rankings de Jogadores")
+        if not df_stats_all_players.empty:
+            col_rank1, col_rank2, col_rank3 = st.columns(3)
+
+            with col_rank1:
+                st.subheader("Melhores Saldo de Gols")
+                ranking_saldo_gols = gerar_ranking(
+                    df_stats_all_players,
+                    "Saldo de Gols",
+                    ["Jogador", "jogos_total", "Saldo de Gols"],
+                    {"jogos_total": "Jogos"},
+                    ascendente=False
+                )
+                st.dataframe(ranking_saldo_gols, use_container_width=True)
+
+            with col_rank2:
+                st.subheader("Melhores Win Rate")
+                ranking_win_rate = gerar_ranking(
+                    df_stats_all_players,
+                    "Win Rate (%)",
+                    ["Jogador", "jogos_total", "Win Rate (%)", "Derrota Rate (%)"],
+                    {"jogos_total": "Jogos"},
+                    ascendente=False
+                )
+                st.dataframe(ranking_win_rate, use_container_width=True)
+
+            with col_rank3:
+                st.subheader("Piores Clean Sheets")
+                ranking_clean_sheets = gerar_ranking(
+                    df_stats_all_players,
+                    "Clean Sheets (%)",
+                    ["Jogador", "jogos_total", "Clean Sheets (%)"],
+                    {"jogos_total": "Jogos"},
+                    ascendente=True
+                )
+                st.dataframe(ranking_clean_sheets, use_container_width=True)
+
+            st.markdown("---")
+            st.subheader("Rankings de Overs e BTTS")
+
+            col_over_ht, col_over_ft, col_btts_ft = st.columns(3)
+
+            with col_over_ht:
+                st.subheader("Mais Overs 2.5 HT")
+                ranking_over_ht = gerar_ranking(
+                    df_stats_all_players,
+                    "Over 2.5 HT (%)",
+                    ["Jogador", "jogos_total", "Over 2.5 HT (%)"],
+                    {"jogos_total": "Jogos"},
+                    ascendente=False
+                )
+                st.dataframe(ranking_over_ht, use_container_width=True)
+
+            with col_over_ft:
+                st.subheader("Mais Overs 3.5 FT")
+                ranking_over_ft = gerar_ranking(
+                    df_stats_all_players,
+                    "Over 3.5 FT (%)",
+                    ["Jogador", "jogos_total", "Over 3.5 FT (%)"],
+                    {"jogos_total": "Jogos"},
+                    ascendente=False
+                )
+                st.dataframe(ranking_over_ft, use_container_width=True)
+
+            with col_btts_ft:
+                st.subheader("Mais BTTS FT")
+                ranking_btts_ft = gerar_ranking(
+                    df_stats_all_players,
+                    "BTTS FT (%)",
+                    ["Jogador", "jogos_total", "BTTS FT (%)"],
+                    {"jogos_total": "Jogos"},
+                    ascendente=False
+                )
+                st.dataframe(ranking_btts_ft, use_container_width=True)
+
+        else:
+            st.info("Nenhum dado de jogador encontrado para rankings.")
+
+    with tab3:
+        st.header("💰 Ganhos & Perdas por Jogador")
+        if not df_stats_all_players.empty:
+            # Extrai nomes dos jogadores (remove emojis de medalha)
+            player_names_for_selectbox = sorted([
+                re.sub(r'^[🥇🥈🥉]\s', '', p)
+                for p in df_stats_all_players["Jogador"].unique()
+            ])
+
+            selected_player = st.selectbox(
+                "Selecione um Jogador para Análise:",
+                [""] + player_names_for_selectbox
+            )
+
+            if selected_player:
+                # Adiciona slider para definir as odds (opcional)
+                default_odds = st.slider(
+                    "Defina as odds médias para cálculo:",
+                    min_value=1.50,
+                    max_value=3.00,
+                    value=1.90,
+                    step=0.05
+                )
+
+                # Chama a função atualizada
+                display_metrics_for_player(df_stats_all_players, selected_player, default_odds)
+            else:
+                st.info("Por favor, selecione um jogador para ver a análise.")
+        else:
+            st.info("Nenhum dado de jogador disponível para análise.")
+
+    with tab4:
+        st.header("🔍 Análise Manual de Confrontos e Desempenho Individual")
+        st.write(
+            "Insira os nomes dos jogadores para analisar seus confrontos diretos recentes e o desempenho individual nas últimas partidas.")
+
+        # Certifique-se de que df_stats_all_players esteja carregado antes de usar
+        if df_resultados.empty:
+            st.info("Carregando dados dos resultados para a análise manual...")
+
+        all_players = sorted([re.sub(r'^[🥇🥈🥉]\s', '', p) for p in
+                              df_stats_all_players["Jogador"].unique()]) if not df_stats_all_players.empty else []
+
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            player1_manual = st.selectbox(
+                "Jogador 1:",
+                [""] + all_players,
+                key="player1_manual"
+            )
+        with col_p2:
+            player2_manual = st.selectbox(
+                "Jogador 2:",
+                [""] + all_players,
+                key="player2_manual"
+            )
+
+        num_games_h2h = st.number_input(
+            "Número de últimos confrontos diretos a analisar (máx. 10):",
+            min_value=1,
+            max_value=10,  # Limite de 10 confrontos diretos
+            value=10,
+            key="num_games_h2h"
+        )
+
+        num_games_individual = st.number_input(
+            "Número de últimos jogos individuais a analisar (máx. 20):",  # Ajustei o máximo
+            min_value=1,
+            max_value=20,  # Limite de 20 jogos individuais para desempenho recente
+            value=10,
+            key="num_games_individual"
+        )
+
+        if st.button("Analisar Confronto e Desempenho", key="analyze_button"):
+            if player1_manual and player2_manual:
+                if player1_manual == player2_manual:
+                    st.warning("Por favor, selecione jogadores diferentes.")
+                else:
+                    perform_manual_analysis(df_resultados, player1_manual, player2_manual, num_games_h2h,
+                                            num_games_individual)
+            else:
+                st.warning("Por favor, selecione ambos os jogadores.")
 
 
-# --- Carregamento de Dados Principal ---
-# Use um contador simples para forçar o recarregamento dos dados em cada refresh do autorefresh
-# Isso garante que as funções @st.cache_data sejam invalidadas e os dados sejam buscados novamente.
-if 'refresh_flag' not in st.session_state:
-    st.session_state.refresh_flag = 0
-
-df_resultados, df_live_clean, df_live_display = carregar_todos_os_dados_essenciais(st.session_state.refresh_flag)
-df_stats_base = calcular_estatisticas_todos_jogadores(df_resultados)
-df_radar = calcular_radar_fifa(df_live_clean)
-
-# --- Renderização do Conteúdo Principal ---
-st.header(f"Página: {aba_selecionada}")
-
-# NOVO: Card de Última Atualização no topo da tela principal
-tz = pytz.timezone('America/Sao_Paulo')
-now = datetime.now(tz)
-st.markdown(
-    f"""
-    <div class="custom-info-card">
-        <span class="icon">⏰</span>
-        <div class="text">
-            Última atualização dos dados:
-            <br>
-            <span class="datetime">{now.strftime('%d/%m/%Y %H:%M:%S')}</span>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-if aba_selecionada == "Ao Vivo":
-    st.subheader("🔴 Jogos Ao Vivo")
-    exibir_estatisticas_partidas(df_live_display, "Jogos Ao Vivo")
-elif aba_selecionada == "Resultados":
-    st.subheader("📜 Resultados Históricos")
-    exibir_estatisticas_partidas(df_resultados, "Resultados Históricos")
-elif aba_selecionada == "Radar FIFA":
-    st.subheader("📊 Radar FIFA - Tendências por Liga")
-    st.write("Análise da frequência de Linhas Over HT & FT de cada liga em tempo real.")
-    st.markdown("---")
-    st.markdown("---")
-    exibir_radar_fifa(df_radar)
-elif aba_selecionada == "Rankings":
-    exibir_rankings(df_stats_base)
-elif aba_selecionada == "Sobre":
-    exibir_sobre()
-
-# Incrementar a flag para o próximo refresh
-st.session_state.refresh_flag += 1
+if __name__ == "__main__":
+    app()
