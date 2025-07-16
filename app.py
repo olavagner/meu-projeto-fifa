@@ -1377,7 +1377,7 @@ def app():
         initial_sidebar_state="expanded",
     )
 
-    st.title("⚽ Dashboard FIFA Esoccer")
+    st.title("🎮 Dashboard FIFA Esoccer")
 
     brasil_timezone = pytz.timezone("America/Sao_Paulo")
     current_time_br = datetime.now(brasil_timezone).strftime("%H:%M:%S")
