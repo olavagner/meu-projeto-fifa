@@ -1199,14 +1199,185 @@ def perform_manual_analysis(df_resultados: pd.DataFrame, player1: str, player2: 
     st.markdown("---")
 
 
+def generate_smart_alerts(df_resultados: pd.DataFrame, df_stats_all_players: pd.DataFrame) -> None:
+    """Gera alertas inteligentes sobre jogadores e ligas com foco em tendências recentes."""
+    st.header("🔔 Alertas Inteligentes")
+
+    # Seção de Destaques por Liga
+    st.subheader("🌟 Destaques da Rodada por Liga")
+
+    if df_resultados.empty or df_stats_all_players.empty:
+        st.warning("Dados insuficientes para gerar alertas.")
+        return
+
+    # Agrupar jogadores por liga
+    ligas_principais = ["Battle 8 Min", "Volta 6 Min", "H2H 8 Min", "GT 12 Min"]
+
+    for liga in ligas_principais:
+        # Filtra jogadores que atuam na liga específica
+        jogadores_liga = df_stats_all_players[
+            df_stats_all_players["Ligas Atuantes"].str.contains(liga)
+        ].copy()
+
+        if jogadores_liga.empty:
+            continue
+
+        st.markdown(f"### 🏆 {liga}")
+
+        # Listas para armazenar os destaques
+        melhores_jogadores = []
+        piores_jogadores = []
+
+        for _, jogador in jogadores_liga.iterrows():
+            nome_jogador = jogador["Jogador"]
+            stats = get_recent_player_stats(df_resultados, nome_jogador, 10)  # Últimos 10 jogos
+
+            if not stats or stats["jogos_recentes"] < 5:  # Pula jogadores com poucos jogos recentes
+                continue
+
+            # Cálculo de tendências
+            over_25_rate = stats["pct_over_25_ft"]
+            over_35_rate = stats["pct_over_35_ft"]
+            under_25_rate = stats["pct_under_25_ft"]
+            media_gols = stats["media_gols_marcados_ft"] + stats["media_gols_sofridos_ft"]
+
+            # Critérios para melhor jogador (Over)
+            if over_25_rate >= 70 and over_35_rate >= 50 and media_gols >= 3.0:
+                melhores_jogadores.append({
+                    "Jogador": nome_jogador,
+                    "Over 2.5 FT": f"{over_25_rate:.0f}%",
+                    "Over 3.5 FT": f"{over_35_rate:.0f}%",
+                    "Média Gols": f"{media_gols:.1f}",
+                    "Dica": "✅ Forte candidato a Over"
+                })
+
+            # Critérios para pior jogador (Under)
+            elif under_25_rate >= 70 and media_gols <= 2.0:
+                piores_jogadores.append({
+                    "Jogador": nome_jogador,
+                    "Under 2.5 FT": f"{under_25_rate:.0f}%",
+                    "Média Gols": f"{media_gols:.1f}",
+                    "Dica": "❌ Evitar Over"
+                })
+
+        # Exibir os melhores jogadores da liga
+        if melhores_jogadores:
+            st.markdown("#### 🎯 Melhores Oportunidades (Over)")
+            df_melhores = pd.DataFrame(melhores_jogadores).sort_values("Over 2.5 FT", ascending=False)
+
+            st.dataframe(
+                df_melhores.style.map(
+                    lambda x: 'background-color: #d4edda' if '✅' in str(x) else '',
+                    subset=['Dica']
+                ),
+                hide_index=True
+            )
+
+            # Dica estratégica para o melhor jogador
+            top_player = df_melhores.iloc[0]
+            st.success(
+                f"**Dica Estratégica:** O jogador **{top_player['Jogador']}** está com excelente performance em jogos Over, "
+                f"com {top_player['Over 2.5 FT']} de acertos em Over 2.5 FT e média de {top_player['Média Gols']} gols por jogo. "
+                f"Considere apostas em Over 2.5 ou 3.5 FT quando este jogador estiver em campo."
+            )
+
+        # Exibir os piores jogadores da liga
+        if piores_jogadores:
+            st.markdown("#### ⚠️ Cuidado (Under)")
+            df_piores = pd.DataFrame(piores_jogadores).sort_values("Under 2.5 FT", ascending=False)
+
+            st.dataframe(
+                df_piores.style.map(
+                    lambda x: 'background-color: #f8d7da' if '❌' in str(x) else '',
+                    subset=['Dica']
+                ),
+                hide_index=True
+            )
+
+            if not melhores_jogadores and piores_jogadores:
+                worst_player = df_piores.iloc[0]
+                st.warning(
+                    f"**Alerta:** O jogador **{worst_player['Jogador']}** está com tendência Under, "
+                    f"com {worst_player['Under 2.5 FT']} de jogos com menos de 2.5 gols. "
+                    f"Evite apostas Over quando este jogador estiver em campo."
+                )
+
+        if not melhores_jogadores and not piores_jogadores:
+            st.info(f"Nenhum destaque claro encontrado para {liga} nos últimos jogos.")
+
+        st.markdown("---")
+
+    # Seção de Análise por Liga
+    st.subheader("📊 Análise por Liga")
+
+    liga_stats = []
+    for liga in ligas_principais:
+        liga_games = df_resultados[df_resultados["Liga"] == liga].tail(20)  # Últimos 20 jogos
+        if len(liga_games) < 5:
+            continue
+
+        avg_goals = liga_games["Total FT"].mean()
+        over_25 = (liga_games["Total FT"] > 2.5).mean() * 100
+        over_35 = (liga_games["Total FT"] > 3.5).mean() * 100
+        btts = ((liga_games["Mandante FT"] > 0) & (liga_games["Visitante FT"] > 0)).mean() * 100
+
+        liga_stats.append({
+            "Liga": liga,
+            "Média Gols": f"{avg_goals:.1f}",
+            "Over 2.5%": f"{over_25:.0f}%",
+            "Over 3.5%": f"{over_35:.0f}%",
+            "BTTS%": f"{btts:.0f}%"
+        })
+
+    if liga_stats:
+        df_liga_stats = pd.DataFrame(liga_stats)
+
+        st.dataframe(
+            df_liga_stats.style.map(
+                lambda x: 'background-color: #d4edda' if '%' in str(x) and int(x.replace('%', '')) >= 70 else
+                ('background-color: #f8d7da' if '%' in str(x) and int(x.replace('%', '')) <= 40 else ''),
+                subset=["Over 2.5%", "Over 3.5%", "BTTS%"]
+            )
+        )
+
+        # Dicas Gerais de Apostas
+        st.subheader("💡 Dicas Gerais de Apostas")
+
+        for liga in liga_stats:
+            if float(liga['Over 2.5%'].replace('%', '')) >= 70:
+                st.success(
+                    f"✅ **{liga['Liga']}:** Ótima liga para apostas em **Over 2.5 FT**! "
+                    f"Taxa de acerto: {liga['Over 2.5%']} (Média: {liga['Média Gols']} gols/jogo)."
+                )
+            elif float(liga["Over 2.5%"].replace('%', '')) <= 40:
+                st.warning(
+                    f"**{liga['Liga']}:** Cuidado com Over - apenas "
+                    f"{liga['Over 2.5%']} dos últimos jogos tiveram mais de 2.5 gols. "
+                    f"Considere apostas Under."
+                )
+
+            if float(liga["BTTS%"].replace('%', '')) >= 65:
+                st.info(f"**{liga['Liga']}:** BTTS tem sido lucrativo - {liga['BTTS%']} de acerto.")
+
+    # Conclusão Estratégica
+    st.subheader("🎯 Conclusão Estratégica")
+    st.write("""
+- **Jogadores com tendência Over:** Priorize apostas em linhas mais altas (2.5+, 3.5+)
+- **Jogadores com tendência Under:** Evite apostas Over ou considere Under
+- **Ligas ofensivas:** Aproveite as odds em Over quando combinadas com jogadores em boa fase
+- **Ligas defensivas:** Considere apostas em Under ou handicaps asiáticos
+""")
+    st.write("🔍 Sempre confira as odds e o histórico recente antes de apostar!")
+
+
 def app():
     st.set_page_config(
-        page_title="SIMULADOR FIFA ESOCCER",
+        page_title="Dashboard FIFA Esoccer",
         layout="wide",
         initial_sidebar_state="expanded",
     )
 
-    st.title("🎮 SIMULADOR FIFA ESOCCER")
+    st.title("⚽ Dashboard FIFA Esoccer")
 
     brasil_timezone = pytz.timezone("America/Sao_Paulo")
     current_time_br = datetime.now(brasil_timezone).strftime("%H:%M:%S")
@@ -1224,13 +1395,14 @@ def app():
     df_stats_all_players = calcular_estatisticas_todos_jogadores(
         df_resultados)  # Carrega as estatísticas de todos os jogadores aqui
 
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Ao Vivo", "📈 Rankings", "💰 Ganhos & Perdas", "🔍 Análise Manual"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["📊 Ao Vivo", "📈 Rankings", "💰 Ganhos & Perdas", "🔍 Análise Manual", "🔔 Alertas Inteligentes"])
 
     with tab1:
         st.header("Jogos Ao Vivo")
         exibir_estatisticas_partidas(df_live_display, "Jogos ao Vivo")
         st.markdown("---")
-        st.header("Radar FIFA - Analises em tempo real das ligas")
+        st.header("Radar FIFA")
         df_radar = calcular_radar_fifa(df_live_clean)
         if not df_radar.empty:
             st.dataframe(
@@ -1401,6 +1573,12 @@ def app():
                                             num_games_individual)
             else:
                 st.warning("Por favor, selecione ambos os jogadores.")
+
+    with tab5:
+        if not df_resultados.empty and not df_stats_all_players.empty:
+            generate_smart_alerts(df_resultados, df_stats_all_players)
+        else:
+            st.warning("Carregando dados para os alertas inteligentes...")
 
 
 if __name__ == "__main__":
