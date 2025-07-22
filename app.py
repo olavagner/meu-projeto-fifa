@@ -661,6 +661,206 @@ def gerar_ranking(
     return df_final
 
 
+def generate_smart_tips(df_resultados: pd.DataFrame) -> None:
+    """Gera dicas inteligentes baseadas nos últimos 10 jogos de cada jogador."""
+    st.header("💡 Dicas Inteligentes por Liga")
+    st.write(
+        "Análise de consistência e oscilações de cada jogador na liga")
+
+    if df_resultados.empty:
+        st.warning("Dados insuficientes para gerar dicas.")
+        return
+
+    # Configurações
+    min_jogos = 5
+    total_jogos_analise = 10
+    ligas_principais = ["Battle 8 Min", "Volta 6 Min", "H2H 8 Min", "GT 12 Min"]
+
+    # Processamento por liga
+    for liga in ligas_principais:
+        st.markdown(f"### 🏆 Liga: {liga}")
+
+        # Filtra jogos da liga
+        df_liga = df_resultados[df_resultados["Liga"] == liga]
+
+        if df_liga.empty:
+            st.info(f"Nenhum dado disponível para a liga {liga}")
+            continue
+
+        # Lista de jogadores únicos na liga
+        jogadores = pd.concat([df_liga["Mandante"], df_liga["Visitante"]]).unique()
+
+        dados_jogadores = []
+
+        for jogador in jogadores:
+            # Filtra os últimos 10 jogos do jogador na liga específica
+            jogos_jogador = df_liga[
+                (df_liga["Mandante"] == jogador) |
+                (df_liga["Visitante"] == jogador)
+                ].sort_values("Data", ascending=False).head(total_jogos_analise)
+
+            if len(jogos_jogador) < min_jogos:
+                continue
+
+            # Calcula estatísticas
+            stats = {
+                "Jogador": jogador,
+                "Jogos": len(jogos_jogador),
+                "Over 1.5 HT": 0,
+                "Over 2.5 HT": 0,
+                "Over 2.5 FT": 0,
+                "Over 3.5 FT": 0,
+                "Over 4.5 FT": 0,
+                "Gols Marcados Média": 0,
+                "Gols Sofridos Média": 0,
+                "BTTS FT": 0
+            }
+
+            for _, jogo in jogos_jogador.iterrows():
+                # Determina se o jogador é mandante ou visitante
+                is_mandante = jogo["Mandante"] == jogador
+
+                # Estatísticas HT
+                total_ht = jogo["Total HT"]
+                if total_ht > 1.5: stats["Over 1.5 HT"] += 1
+                if total_ht > 2.5: stats["Over 2.5 HT"] += 1
+
+                # Estatísticas FT
+                total_ft = jogo["Total FT"]
+                if total_ft > 2.5: stats["Over 2.5 FT"] += 1
+                if total_ft > 3.5: stats["Over 3.5 FT"] += 1
+                if total_ft > 4.5: stats["Over 4.5 FT"] += 1
+
+                # Gols marcados e sofridos
+                if is_mandante:
+                    stats["Gols Marcados Média"] += jogo["Mandante FT"]
+                    stats["Gols Sofridos Média"] += jogo["Visitante FT"]
+                else:
+                    stats["Gols Marcados Média"] += jogo["Visitante FT"]
+                    stats["Gols Sofridos Média"] += jogo["Mandante FT"]
+
+                # BTTS
+                if jogo["Mandante FT"] > 0 and jogo["Visitante FT"] > 0:
+                    stats["BTTS FT"] += 1
+
+            # Calcula médias e percentuais
+            stats["Gols Marcados Média"] = round(stats["Gols Marcados Média"] / len(jogos_jogador), 2)
+            stats["Gols Sofridos Média"] = round(stats["Gols Sofridos Média"] / len(jogos_jogador), 2)
+
+            for key in ["Over 1.5 HT", "Over 2.5 HT", "Over 2.5 FT", "Over 3.5 FT", "Over 4.5 FT", "BTTS FT"]:
+                stats[key] = round((stats[key] / len(jogos_jogador)) * 100)
+
+            dados_jogadores.append(stats)
+
+        if not dados_jogadores:
+            st.info(f"Nenhum jogador com mínimo de {min_jogos} jogos na liga {liga}")
+            continue
+
+        # Cria DataFrame e ordena por Over 2.5 FT
+        df_ranking = pd.DataFrame(dados_jogadores)
+        df_ranking = df_ranking.sort_values("Over 2.5 FT", ascending=False)
+
+        # Adiciona medalhas
+        medalhas = {0: "🥇", 1: "🥈", 2: "🥉"}
+        df_ranking = df_ranking.reset_index(drop=True)
+        df_ranking["Pos"] = df_ranking.index + 1
+        df_ranking["Jogador"] = df_ranking.apply(
+            lambda row: f"{medalhas.get(row.name, '')} {row['Jogador']}" if row.name in medalhas else row["Jogador"],
+            axis=1
+        )
+
+        # Exibe tabela resumida
+        st.dataframe(
+            df_ranking[["Pos", "Jogador", "Jogos", "Over 2.5 FT", "Over 3.5 FT", "Over 1.5 HT", "Gols Marcados Média",
+                        "Gols Sofridos Média"]],
+            use_container_width=True,
+            height=400
+        )
+
+        # Gera relatórios individuais
+        st.markdown("#### 🔍 Relatórios de Consistência")
+
+        for _, jogador in df_ranking.head(10).iterrows():
+            with st.expander(
+                    f"📌 Análise detalhada: {jogador['Jogador'].replace('🥇', '').replace('🥈', '').replace('🥉', '').strip()}"):
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.metric("📈 Over 2.5 FT", f"{jogador['Over 2.5 FT']}%")
+                    st.metric("⚽ Gols Marcados (Média)", jogador["Gols Marcados Média"])
+                    st.metric("🎯 Over 1.5 HT", f"{jogador['Over 1.5 HT']}%")
+
+                with col2:
+                    st.metric("🔥 Over 3.5 FT", f"{jogador['Over 3.5 FT']}%")
+                    st.metric("🥅 Gols Sofridos (Média)", jogador["Gols Sofridos Média"])
+                    st.metric("⚡ Over 2.5 HT", f"{jogador['Over 2.5 HT']}%")
+
+                # Gera o relatório textual inteligente
+                relatorio = generate_player_report(jogador)
+                st.markdown(f"##### 📝 Relatório de Desempenho")
+                st.info(relatorio)
+
+
+def generate_player_report(jogador: pd.Series) -> str:
+    """Gera um relatório textual inteligente sobre o desempenho do jogador."""
+    report_parts = []
+
+    # Padrão Over/Under
+    over_25_rate = jogador["Over 2.5 FT"]
+    over_35_rate = jogador["Over 3.5 FT"]
+    over_15_ht_rate = jogador["Over 1.5 HT"]
+    gols_marcados = jogador["Gols Marcados Média"]
+    gols_sofridos = jogador["Gols Sofridos Média"]
+
+    # Determina padrão principal
+    if over_25_rate >= 80:
+        report_parts.append(f"🔹 **Máquina de Over Gols** - {over_25_rate}% dos jogos com Over 2.5 FT")
+        if over_35_rate >= 60:
+            report_parts.append(f"🔹 **Especialista em Placar Alto** - {over_35_rate}% dos jogos com Over 3.5 FT")
+    elif over_25_rate <= 30:
+        report_parts.append(f"🔹 **Padrão Under** - Apenas {over_25_rate}% dos jogos com Over 2.5 FT")
+    else:
+        report_parts.append(f"🔹 **Desempenho Intermediário** - {over_25_rate}% dos jogos com Over 2.5 FT")
+
+    # Ataque e Defesa
+    if gols_marcados >= 2.5:
+        report_parts.append(f"🔹 **Ataque Potente** - Média de {gols_marcados} gols marcados por jogo")
+    elif gols_marcados <= 1.0:
+        report_parts.append(f"🔹 **Ataque Limitado** - Apenas {gols_marcados} gols marcados em média")
+
+    if gols_sofridos >= 2.0:
+        report_parts.append(f"🔹 **Defesa Instável** - Média de {gols_sofridos} gols sofridos por jogo")
+    elif gols_sofridos <= 1.0:
+        report_parts.append(f"🔹 **Defesa Sólida** - Apenas {gols_sofridos} gols sofridos em média")
+
+    # Performance no HT
+    if over_15_ht_rate >= 80:
+        report_parts.append(f"🔹 **Começo Forte** - {over_15_ht_rate}% dos jogos com Over 1.5 HT")
+
+    # Recomendações de Aposta
+    recomendacoes = []
+    if over_25_rate >= 80 and gols_marcados >= 2.0:
+        if over_35_rate >= 60:
+            recomendacoes.append("Over 3.5 FT é uma aposta altamente recomendada")
+        else:
+            recomendacoes.append("Over 2.5 FT é uma aposta segura")
+
+    if over_15_ht_rate >= 70:
+        recomendacoes.append("Over 1.5 HT tem bom potencial")
+
+    if recomendacoes:
+        report_parts.append("\n🌟 **Recomendações de Aposta:**")
+        for rec in recomendacoes:
+            report_parts.append(f"✅ {rec}")
+
+    # Risco/Confiança
+    if over_25_rate >= 80 and gols_marcados >= 2.5:
+        report_parts.append("\n🟢 **ALERTA DE CONFIANÇA:** Apostas em over são altamente recomendadas")
+    elif over_25_rate <= 30 and gols_marcados <= 1.0:
+        report_parts.append("\n🔴 **ALERTA DE RISCO:** Evitar apostas em over")
+
+    return "\n\n".join(report_parts)
+
 # Processamento de Dados Ao Vivo
 @st.cache_data(show_spinner=False, ttl=300)
 def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -1327,40 +1527,6 @@ def generate_ai_prediction(df_resultados: pd.DataFrame) -> None:
     else:
         st.info("Nenhuma sequência relevante encontrada nos últimos 20 jogos de cada liga.")
 
-def generate_smart_alerts(df_resultados: pd.DataFrame, df_stats_all_players: pd.DataFrame) -> None:
-    """Gera alertas inteligentes sobre tendências recentes."""
-    st.header("🔔 Alertas Inteligentes")
-    st.write("Análise de jogadores e ligas com desempenhos relevantes")
-
-    if df_resultados.empty or df_stats_all_players.empty:
-        st.warning("Dados insuficientes para gerar alertas.")
-        return
-
-    # Configurações básicas
-    ligas_principais = ["Battle 8 Min", "Volta 6 Min", "H2H 8 Min", "GT 12 Min"]
-    min_jogos = 10
-
-    st.subheader("🌟 Destaques Recentes")
-
-    # Aqui você pode adicionar a lógica específica de alertas que deseja
-    st.info("Funcionalidade em desenvolvimento. Em breve terá análises automáticas de tendências.")
-
-    # Exemplo básico de alertas
-    try:
-        # Verifica jogadores com alta performance
-        df_top = df_stats_all_players[
-            (df_stats_all_players["jogos_total"] >= min_jogos)
-        ].sort_values("Win Rate (%)", ascending=False).head(3)
-
-        if not df_top.empty:
-            st.markdown("### 🏆 Top Jogadores (Win Rate)")
-            for _, row in df_top.iterrows():
-                st.success(
-                    f"**{row['Jogador']}**: {row['Win Rate (%)']:.1f}% "
-                    f"vitórias em {row['jogos_total']} jogos"
-                )
-    except Exception as e:
-        st.error(f"Erro ao gerar alertas: {str(e)}")
 
 def app():
     st.set_page_config(
@@ -1387,8 +1553,9 @@ def app():
     df_stats_all_players = calcular_estatisticas_todos_jogadores(
         df_resultados)  # Carrega as estatísticas de todos os jogadores aqui
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-        ["📊 Ao Vivo", "📈 Rankings", "💰 Ganhos & Perdas", "🔍 Análise Manual", "🔔 Alertas Inteligentes", "🤖 Previsão IA"])
+    # Abas modificadas - removida a aba "Alertas Inteligentes"
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["📊 Ao Vivo", "💰 Ganhos & Perdas", "🔍 Análise Manual", "🤖 Previsão IA", "💡 Dicas Inteligentes"])
     with tab1:
         st.header("Jogos Ao Vivo")
         exibir_estatisticas_partidas(df_live_display, "Jogos ao Vivo")
@@ -1404,85 +1571,6 @@ def app():
             st.info("Nenhum dado para o Radar FIFA.")
 
     with tab2:
-        st.header("Rankings de Jogadores")
-        if not df_stats_all_players.empty:
-            col_rank1, col_rank2, col_rank3 = st.columns(3)
-
-            with col_rank1:
-                st.subheader("Melhores Saldo de Gols")
-                ranking_saldo_gols = gerar_ranking(
-                    df_stats_all_players,
-                    "Saldo de Gols",
-                    ["Jogador", "jogos_total", "Saldo de Gols"],
-                    {"jogos_total": "Jogos"},
-                    ascendente=False
-                )
-                st.dataframe(ranking_saldo_gols, use_container_width=True)
-
-            with col_rank2:
-                st.subheader("Melhores Win Rate")
-                ranking_win_rate = gerar_ranking(
-                    df_stats_all_players,
-                    "Win Rate (%)",
-                    ["Jogador", "jogos_total", "Win Rate (%)", "Derrota Rate (%)"],
-                    {"jogos_total": "Jogos"},
-                    ascendente=False
-                )
-                st.dataframe(ranking_win_rate, use_container_width=True)
-
-            with col_rank3:
-                st.subheader("Piores Clean Sheets")
-                ranking_clean_sheets = gerar_ranking(
-                    df_stats_all_players,
-                    "Clean Sheets (%)",
-                    ["Jogador", "jogos_total", "Clean Sheets (%)"],
-                    {"jogos_total": "Jogos"},
-                    ascendente=True
-                )
-                st.dataframe(ranking_clean_sheets, use_container_width=True)
-
-            st.markdown("---")
-            st.subheader("Rankings de Overs e BTTS")
-
-            col_over_ht, col_over_ft, col_btts_ft = st.columns(3)
-
-            with col_over_ht:
-                st.subheader("Mais Overs 2.5 HT")
-                ranking_over_ht = gerar_ranking(
-                    df_stats_all_players,
-                    "Over 2.5 HT (%)",
-                    ["Jogador", "jogos_total", "Over 2.5 HT (%)"],
-                    {"jogos_total": "Jogos"},
-                    ascendente=False
-                )
-                st.dataframe(ranking_over_ht, use_container_width=True)
-
-            with col_over_ft:
-                st.subheader("Mais Overs 3.5 FT")
-                ranking_over_ft = gerar_ranking(
-                    df_stats_all_players,
-                    "Over 3.5 FT (%)",
-                    ["Jogador", "jogos_total", "Over 3.5 FT (%)"],
-                    {"jogos_total": "Jogos"},
-                    ascendente=False
-                )
-                st.dataframe(ranking_over_ft, use_container_width=True)
-
-            with col_btts_ft:
-                st.subheader("Mais BTTS FT")
-                ranking_btts_ft = gerar_ranking(
-                    df_stats_all_players,
-                    "BTTS FT (%)",
-                    ["Jogador", "jogos_total", "BTTS FT (%)"],
-                    {"jogos_total": "Jogos"},
-                    ascendente=False
-                )
-                st.dataframe(ranking_btts_ft, use_container_width=True)
-
-        else:
-            st.info("Nenhum dado de jogador encontrado para rankings.")
-
-    with tab3:
         st.header("💰 Ganhos & Perdas por Jogador")
         if not df_stats_all_players.empty:
             # Extrai nomes dos jogadores (remove emojis de medalha)
@@ -1513,7 +1601,7 @@ def app():
         else:
             st.info("Nenhum dado de jogador disponível para análise.")
 
-    with tab4:
+    with tab3:
         st.header("🔍 Análise Manual de Confrontos e Desempenho Individual")
         st.write(
             "Insira os nomes dos jogadores para analisar seus confrontos diretos recentes e o desempenho individual nas últimas partidas.")
@@ -1565,13 +1653,11 @@ def app():
             else:
                 st.warning("Por favor, selecione ambos os jogadores.")
 
-    with tab5:
-        if not df_resultados.empty and not df_stats_all_players.empty:
-            generate_smart_alerts(df_resultados, df_stats_all_players)
-        else:
-            st.warning("Carregando dados para os alertas inteligentes...")
-    with tab6:
+    with tab4:
         generate_ai_prediction(df_resultados)
+
+    with tab5:
+        generate_smart_tips(df_resultados)
 
 
 if __name__ == "__main__":
