@@ -1530,12 +1530,12 @@ def generate_ai_prediction(df_resultados: pd.DataFrame) -> None:
 
 def app():
     st.set_page_config(
-        page_title="Dashboard FIFA Esoccer",
+        page_title="INIMIGOS DA 365",
         layout="wide",
         initial_sidebar_state="expanded",
     )
 
-    st.title("🎮 Dashboard FIFA Esoccer")
+    st.title("💀 INIMIGOS DA 365")
 
     brasil_timezone = pytz.timezone("America/Sao_Paulo")
     current_time_br = datetime.now(brasil_timezone).strftime("%H:%M:%S")
