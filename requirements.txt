@@ -5,6 +5,7 @@ beautifulsoup4
 lxml
 streamlit-autorefresh
 pytz
-st-aggrid
+streamlit-aggrid
+
 
 
