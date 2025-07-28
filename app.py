@@ -12,6 +12,10 @@ import time
 from collections import defaultdict
 import pytz
 
+# --- ADICIONE ESTAS NOVAS IMPORTAÇÕES AQUI ---
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+# ---------------------------------------------
+
 # Configuração de Logs
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1013,7 +1017,7 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
 # Lógica do Radar FIFA
 @st.cache_data(show_spinner=False, ttl=300)
 def calcular_radar_fifa(df_live_clean: pd.DataFrame) -> pd.DataFrame:
-    """Calcula as porcentagens de Over e BTTS para o Radar FIFA."""
+    """Calcula as porcentagens de Over e BTTS para o Radar FIFA, incluindo médias de gols HT/FT por liga."""
     if df_live_clean.empty:
         return pd.DataFrame()
 
@@ -1027,8 +1031,13 @@ def calcular_radar_fifa(df_live_clean: pd.DataFrame) -> pd.DataFrame:
         if total_jogos_analisados == 0:
             continue
 
+        # Cálculos existentes para porcentagens de Over/BTTS
         contadores_ht = {k: 0 for k in CRITERIOS_HT.keys()}
         contadores_ft = {k: 0 for k in CRITERIOS_FT.keys()}
+
+        # Novos cálculos para médias de gols
+        soma_gols_ht = 0
+        soma_gols_ft = 0
 
         for _, jogo_ao_vivo in jogos_da_liga.iterrows():
             media_gols_ht_jogo = jogo_ao_vivo["Gols HT"]
@@ -1036,6 +1045,10 @@ def calcular_radar_fifa(df_live_clean: pd.DataFrame) -> pd.DataFrame:
 
             if pd.isna(media_gols_ht_jogo): media_gols_ht_jogo = 0.0
             if pd.isna(media_gols_ft_jogo): media_gols_ft_jogo = 0.0
+
+            # Acumula para média
+            soma_gols_ht += media_gols_ht_jogo
+            soma_gols_ft += media_gols_ft_jogo
 
             for criterio, valores in CRITERIOS_HT.items():
                 if media_gols_ht_jogo >= valores["min"]:
@@ -1045,7 +1058,17 @@ def calcular_radar_fifa(df_live_clean: pd.DataFrame) -> pd.DataFrame:
                 if media_gols_ft_jogo >= contagem_info["min"]:
                     contadores_ft[criterio] += 1
 
-        linha_liga = {"Liga": liga}
+        # Calcula médias
+        media_gols_ht_liga = soma_gols_ht / total_jogos_analisados if total_jogos_analisados > 0 else 0
+        media_gols_ft_liga = soma_gols_ft / total_jogos_analisados if total_jogos_analisados > 0 else 0
+
+        linha_liga = {
+            "Liga": liga,
+            "Média Gols HT": f"{media_gols_ht_liga:.2f}",  # Nova coluna
+            "Média Gols FT": f"{media_gols_ft_liga:.2f}"  # Nova coluna
+        }
+
+        # Adiciona os contadores existentes
         for criterio, contagem in contadores_ht.items():
             percentual = (contagem / total_jogos_analisados) * 100 if total_jogos_analisados > 0 else 0
             linha_liga[f"{criterio}"] = f"{int(percentual)}%"
@@ -1056,18 +1079,24 @@ def calcular_radar_fifa(df_live_clean: pd.DataFrame) -> pd.DataFrame:
 
         resultados_radar.append(linha_liga)
 
-    colunas_radar_ordenadas = ["Liga"] + list(CRITERIOS_HT.keys()) + list(CRITERIOS_FT.keys())
+    # Ordena as colunas para exibição (com as novas colunas primeiro)
+    colunas_radar_ordenadas = [
+                                  "Liga",
+                                  "Média Gols HT",
+                                  "Média Gols FT"
+                              ] + list(CRITERIOS_HT.keys()) + list(CRITERIOS_FT.keys())
 
     df_radar = pd.DataFrame(resultados_radar)
 
+    # Garante que todas as colunas existam (preenche com 0% se não existirem)
     for col in colunas_radar_ordenadas:
         if col not in df_radar.columns:
-            df_radar[col] = "0%"
+            if col in ["Média Gols HT", "Média Gols FT"]:
+                df_radar[col] = "0.00"
+            else:
+                df_radar[col] = "0%"
 
-    df_radar = df_radar[colunas_radar_ordenadas]
-
-    return df_radar
-
+    return df_radar[colunas_radar_ordenadas]
 
 # Função de Carga de Dados Essenciais
 @st.cache_data(show_spinner=False, ttl=300)
@@ -1206,7 +1235,7 @@ def display_metrics_for_player(df_player_stats: pd.DataFrame, player_name: str, 
     df_results = pd.DataFrame(results)
 
     # Aplica formatação condicional
-    styled_df = df_results.style.applymap(
+    styled_df = df_results.style.map(
         lambda x: 'color: green; font-weight: bold;' if isinstance(x, (int, float)) and x > 0 else
         ('color: red; font-weight: bold;' if isinstance(x, (int, float)) and x < 0 else ''),
         subset=['Lucro/Prejuízo (Unidades)']
@@ -1214,7 +1243,6 @@ def display_metrics_for_player(df_player_stats: pd.DataFrame, player_name: str, 
         'Taxa de Acerto (%)': "{:.2f}%",
         'Lucro/Prejuízo (Unidades)': "{:.2f}"
     })
-
     # Exibe a tabela formatada
     st.dataframe(styled_df, use_container_width=True)
 
@@ -1536,10 +1564,8 @@ def app():
     )
 
     st.title("💀 INIMIGOS DA 365")
-
     brasil_timezone = pytz.timezone("America/Sao_Paulo")
     current_time_br = datetime.now(brasil_timezone).strftime("%H:%M:%S")
-
     st.markdown(f"**Última atualização:** {current_time_br}")
 
     # Auto-refresh every 60 seconds
@@ -1550,69 +1576,158 @@ def app():
         st.session_state.reload_flag = 0
 
     df_resultados, df_live_clean, df_live_display = carregar_todos_os_dados_essenciais(st.session_state.reload_flag)
-    df_stats_all_players = calcular_estatisticas_todos_jogadores(
-        df_resultados)  # Carrega as estatísticas de todos os jogadores aqui
+    df_stats_all_players = calcular_estatisticas_todos_jogadores(df_resultados)
 
-    # Abas modificadas - removida a aba "Alertas Inteligentes"
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["📊 Ao Vivo", "💰 Ganhos & Perdas", "🔍 Análise Manual", "🤖 Previsão IA", "💡 Dicas Inteligentes"])
+    # Reordenar as abas
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        ["📊 Ao Vivo", "🎯 Radar FIFA", "💡 Dicas Inteligentes", "🤖 Previsão IA", "🔍 Análise Manual", "💰 Ganhos & Perdas"]
+    )
+
+    # Aba 1: Ao Vivo
     with tab1:
-        st.header("Jogos Ao Vivo")
-        exibir_estatisticas_partidas(df_live_display, "Jogos ao Vivo")
-        st.markdown("---")
-        st.header("Radar FIFA")
+        st.header("🎮 Cronograma FIFA")
+
+        # Configuração CSS personalizada para eliminar espaços brancos
+        st.markdown("""
+        <style>
+            .ag-root-wrapper {
+                min-width: 100% !important;
+                border: none !important;
+            }
+            .ag-header-viewport {
+                background-color: #f0f2f6 !important;
+            }
+            .ag-cell {
+                padding: 5px 10px !important;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Botões de controle
+        # Botões de controle com estilo melhorado
+        st.markdown("""
+        <style>
+            .stButton>button {
+                border: none;
+                background: linear-gradient(135deg, #e0e0e0 0%, #b8b8b8 100%);
+                color: #333;
+                padding: 8px 16px;
+                border-radius: 8px;
+                font-weight: 600;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                transition: all 0.3s ease;
+                margin-right: 10px;
+            }
+            .stButton>button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+                background: linear-gradient(135deg, #d0d0d0 0%, #a8a8a8 100%);
+            }
+            .stButton>button:active {
+                transform: translateY(0);
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .button-container {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 20px;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Container para os botões
+        st.markdown('<div class="button-container">', unsafe_allow_html=True)
+
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("🔄 Resetar Filtros", key="reset_filters"):
+                st.session_state.grid_key = str(time.time())
+        with col2:
+            if st.button("📊 Atualizar Dados", key="refresh_data"):
+                st.cache_data.clear()
+                st.rerun()
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if not df_live_display.empty:
+            gb = GridOptionsBuilder.from_dataframe(df_live_display)
+
+            # Configuração responsiva das colunas
+            gb.configure_default_column(
+                filterable=True,
+                sortable=True,
+                resizable=True,
+                wrapText=True,
+                autoHeight=True,
+                flex=1  # Distribuição flexível do espaço
+            )
+
+            # Configurações específicas para colunas importantes
+            gb.configure_column("Liga", minWidth=120, maxWidth=150)
+            gb.configure_column("Mandante", minWidth=120)
+            gb.configure_column("Visitante", minWidth=120)
+            gb.configure_column("Sugestão HT", minWidth=120)
+            gb.configure_column("Sugestão FT", minWidth=120)
+
+            grid_options = gb.build()
+
+            # Configurações finais do grid
+            grid_options['suppressHorizontalScroll'] = False
+            grid_options['alwaysShowHorizontalScroll'] = True
+            grid_options['domLayout'] = 'autoHeight'  # Ajuste automático de altura
+
+            # Exibição do grid
+            AgGrid(
+                df_live_display,
+                gridOptions=grid_options,
+                height=None,  # Altura automática
+                width='100%',
+                theme='streamlit',
+                update_mode=GridUpdateMode.FILTERING_CHANGED,
+                allow_unsafe_jscode=True,
+                key=st.session_state.get('grid_key', 'default_grid'),
+                fit_columns_on_grid_load=True
+            )
+        else:
+            st.warning("⏳ Nenhuma partida ao vivo no momento")
+
+    # Aba 2: Radar FIFA
+    with tab2:
+        st.header("🎯 Radar FIFA")
+        st.write(
+            "Análise das porcentagens para mercados Over nas ligas ao vivo, "
+            "incluindo médias de gols HT/FT."
+        )
         df_radar = calcular_radar_fifa(df_live_clean)
         if not df_radar.empty:
             st.dataframe(
-                df_radar.style.map(get_color_for_percentage, subset=pd.IndexSlice[:, df_radar.columns.drop('Liga')]),
+                df_radar.style.map(
+                    get_color_for_percentage,
+                    subset=pd.IndexSlice[:, df_radar.columns.drop(['Liga', 'Média Gols HT', 'Média Gols FT'])]
+                ),
                 use_container_width=True
             )
         else:
             st.info("Nenhum dado para o Radar FIFA.")
 
-    with tab2:
-        st.header("💰 Ganhos & Perdas por Jogador")
-        if not df_stats_all_players.empty:
-            # Extrai nomes dos jogadores (remove emojis de medalha)
-            player_names_for_selectbox = sorted([
-                re.sub(r'^[🥇🥈🥉]\s', '', p)
-                for p in df_stats_all_players["Jogador"].unique()
-            ])
-
-            selected_player = st.selectbox(
-                "Selecione um Jogador para Análise:",
-                [""] + player_names_for_selectbox
-            )
-
-            if selected_player:
-                # Adiciona slider para definir as odds (opcional)
-                default_odds = st.slider(
-                    "Defina as odds médias para cálculo:",
-                    min_value=1.50,
-                    max_value=3.00,
-                    value=1.90,
-                    step=0.05
-                )
-
-                # Chama a função atualizada
-                display_metrics_for_player(df_stats_all_players, selected_player, default_odds)
-            else:
-                st.info("Por favor, selecione um jogador para ver a análise.")
-        else:
-            st.info("Nenhum dado de jogador disponível para análise.")
-
+    # Aba 3: Dicas Inteligentes
     with tab3:
+        generate_smart_tips(df_resultados)
+
+    # Aba 4: Previsão IA
+    with tab4:
+        generate_ai_prediction(df_resultados)
+
+    # Aba 5: Análise Manual
+    with tab5:
         st.header("🔍 Análise Manual de Confrontos e Desempenho Individual")
         st.write(
-            "Insira os nomes dos jogadores para analisar seus confrontos diretos recentes e o desempenho individual nas últimas partidas.")
-
-        # Certifique-se de que df_stats_all_players esteja carregado antes de usar
+            "Insira os nomes dos jogadores para analisar seus confrontos diretos recentes e o desempenho individual nas últimas partidas."
+        )
         if df_resultados.empty:
             st.info("Carregando dados dos resultados para a análise manual...")
-
         all_players = sorted([re.sub(r'^[🥇🥈🥉]\s', '', p) for p in
-                              df_stats_all_players["Jogador"].unique()]) if not df_stats_all_players.empty else []
-
+                            df_stats_all_players["Jogador"].unique()]) if not df_stats_all_players.empty else []
         col_p1, col_p2 = st.columns(2)
         with col_p1:
             player1_manual = st.selectbox(
@@ -1626,39 +1741,55 @@ def app():
                 [""] + all_players,
                 key="player2_manual"
             )
-
         num_games_h2h = st.number_input(
             "Número de últimos confrontos diretos a analisar (máx. 10):",
             min_value=1,
-            max_value=10,  # Limite de 10 confrontos diretos
+            max_value=10,
             value=10,
             key="num_games_h2h"
         )
-
         num_games_individual = st.number_input(
-            "Número de últimos jogos individuais a analisar (máx. 20):",  # Ajustei o máximo
+            "Número de últimos jogos individuais a analisar (máx. 20):",
             min_value=1,
-            max_value=20,  # Limite de 20 jogos individuais para desempenho recente
+            max_value=20,
             value=10,
             key="num_games_individual"
         )
-
         if st.button("Analisar Confronto e Desempenho", key="analyze_button"):
             if player1_manual and player2_manual:
                 if player1_manual == player2_manual:
                     st.warning("Por favor, selecione jogadores diferentes.")
                 else:
                     perform_manual_analysis(df_resultados, player1_manual, player2_manual, num_games_h2h,
-                                            num_games_individual)
+                                        num_games_individual)
             else:
                 st.warning("Por favor, selecione ambos os jogadores.")
 
-    with tab4:
-        generate_ai_prediction(df_resultados)
-
-    with tab5:
-        generate_smart_tips(df_resultados)
-
+    # Aba 6: Ganhos & Perdas
+    with tab6:
+        st.header("💰 Ganhos & Perdas por Jogador")
+        if not df_stats_all_players.empty:
+            player_names_for_selectbox = sorted([
+                re.sub(r'^[🥇🥈🥉]\s', '', p)
+                for p in df_stats_all_players["Jogador"].unique()
+            ])
+            selected_player = st.selectbox(
+                "Selecione um Jogador para Análise:",
+                [""] + player_names_for_selectbox
+            )
+            if selected_player:
+                default_odds = st.slider(
+                    "Defina as odds médias para cálculo:",
+                    min_value=1.50,
+                    max_value=3.00,
+                    value=1.90,
+                    step=0.05
+                )
+                display_metrics_for_player(df_stats_all_players, selected_player, default_odds)
+            else:
+                st.info("Por favor, selecione um jogador para ver a análise.")
+        else:
+            st.info("Nenhum dado de jogador disponível para análise.")
 
 if __name__ == "__main__":
     app()
