@@ -1575,24 +1575,18 @@ def setup_saved_games_tab(df_live_clean, df_live_display, df_resultados):
     def check_game_status(game_time, game_date=None):
         """Classifica o status do jogo com base no horário e data"""
         now = datetime.now(pytz.timezone("America/Sao_Paulo"))
-
         try:
-            # Se temos data e hora, criamos um datetime completo
             if game_date and isinstance(game_date, str):
                 game_datetime = datetime.strptime(f"{game_date} {game_time}", "%d/%m/%Y %H:%M")
                 game_datetime = pytz.timezone("America/Sao_Paulo").localize(game_datetime)
-
                 if game_datetime > now:
                     return "⏳ A iniciar"
-                elif (now - game_datetime).total_seconds() < 3600:  # Menos de 1 hora do fim
+                elif (now - game_datetime).total_seconds() < 3600:
                     return "▶️ Em andamento"
                 else:
                     return "✅ Finalizado"
-
-            # Se só temos hora, usamos lógica simplificada
             game_hour = int(game_time.split(':')[0])
             current_hour = int(now.strftime("%H"))
-
             if game_hour > current_hour or (
                     game_hour == current_hour and int(game_time.split(':')[1]) > int(now.strftime("%M"))):
                 return "⏳ A iniciar"
@@ -1601,14 +1595,13 @@ def setup_saved_games_tab(df_live_clean, df_live_display, df_resultados):
             else:
                 return "✅ Finalizado"
         except:
-            return "✅ Finalizado"  # Default para finalizado se houver erro
+            return "✅ Finalizado"
 
     # Função para calcular ganhos/perdas
     def calculate_profit(suggestion, actual_score, odd=1.60):
         """Calcula o lucro/prejuízo de uma aposta"""
         if not suggestion or suggestion == "Sem Entrada":
             return 0.0
-
         try:
             if "Over" in suggestion:
                 required = float(suggestion.split()[1])
@@ -1625,20 +1618,23 @@ def setup_saved_games_tab(df_live_clean, df_live_display, df_resultados):
 
     if st.button("🔍 Atualizar Análise de Resultados", key="update_results_analysis"):
         results = []
+        total_games = 0
+        ht_greens = 0
+        ht_reds = 0
+        ft_greens = 0
+        ft_reds = 0
         total_ht_profit = 0.0
         total_ft_profit = 0.0
-        total_games = 0
 
         for _, game in st.session_state.saved_games.iterrows():
             status = check_game_status(game['Hora'], game.get('Data do Jogo', None))
-
-            # Se não tivermos data do jogo, tentamos buscar nos resultados
             game_date = game.get('Data do Jogo', None)
+
             if not game_date or game_date == "Aguardando":
                 result_data = df_resultados[
                     (df_resultados['Mandante'] == game['Mandante']) &
                     (df_resultados['Visitante'] == game['Visitante'])
-                    ]
+                ]
                 if not result_data.empty:
                     game_date = result_data.iloc[0].get('Data', "Aguardando")
 
@@ -1650,27 +1646,35 @@ def setup_saved_games_tab(df_live_clean, df_live_display, df_resultados):
                     'Status': status,
                     'Sugestão HT': game.get('Sugestão HT', 'N/A'),
                     'Resultado HT': "N/A",
-                    'Lucro HT': 0.0,
+                    'Lucro HT': "0.00u",
                     'Sugestão FT': game.get('Sugestão FT', 'N/A'),
                     'Resultado FT': "N/A",
-                    'Lucro FT': 0.0
+                    'Lucro FT': "0.00u"
                 })
                 continue
 
-            # Busca resultados apenas para jogos finalizados
             result_data = df_resultados[
                 (df_resultados['Mandante'] == game['Mandante']) &
                 (df_resultados['Visitante'] == game['Visitante'])
-                ]
+            ]
 
             if not result_data.empty:
                 latest_result = result_data.iloc[0]
                 total_ht = latest_result.get('Mandante HT', 0) + latest_result.get('Visitante HT', 0)
                 total_ft = latest_result.get('Mandante FT', 0) + latest_result.get('Visitante FT', 0)
 
-                # Calcula lucro/prejuízo
-                ht_profit = calculate_profit(game.get('Sugestão HT', ''), total_ht)
-                ft_profit = calculate_profit(game.get('Sugestão FT', ''), total_ft)
+                # Calcula lucro/prejuízo com odd padrão (1.60 para a tabela inicial)
+                ht_profit = calculate_profit(game.get('Sugestão HT', ''), total_ht, odd=1.60)
+                ft_profit = calculate_profit(game.get('Sugestão FT', ''), total_ft, odd=1.60)
+
+                if ht_profit > 0:
+                    ht_greens += 1
+                elif ht_profit < 0:
+                    ht_reds += 1
+                if ft_profit > 0:
+                    ft_greens += 1
+                elif ft_profit < 0:
+                    ft_reds += 1
 
                 total_ht_profit += ht_profit
                 total_ft_profit += ft_profit
@@ -1683,10 +1687,10 @@ def setup_saved_games_tab(df_live_clean, df_live_display, df_resultados):
                     'Status': status,
                     'Sugestão HT': game.get('Sugestão HT', 'N/A'),
                     'Resultado HT': f"{latest_result.get('Mandante HT', '?')}-{latest_result.get('Visitante HT', '?')}",
-                    'Lucro HT': ht_profit,
+                    'Lucro HT': f"{ht_profit:.2f}u",
                     'Sugestão FT': game.get('Sugestão FT', 'N/A'),
                     'Resultado FT': f"{latest_result.get('Mandante FT', '?')}-{latest_result.get('Visitante FT', '?')}",
-                    'Lucro FT': ft_profit
+                    'Lucro FT': f"{ft_profit:.2f}u"
                 })
             else:
                 results.append({
@@ -1696,33 +1700,17 @@ def setup_saved_games_tab(df_live_clean, df_live_display, df_resultados):
                     'Status': status,
                     'Sugestão HT': game.get('Sugestão HT', 'N/A'),
                     'Resultado HT': "N/D",
-                    'Lucro HT': 0.0,
+                    'Lucro HT': "0.00u",
                     'Sugestão FT': game.get('Sugestão FT', 'N/A'),
                     'Resultado FT': "N/D",
-                    'Lucro FT': 0.0
+                    'Lucro FT': "0.00u"
                 })
 
         if results:
-            # Cria DataFrame
             df_results = pd.DataFrame(results)
-
-            # Formatação de 2 casas decimais + unidade 'u'
-            df_results['Lucro HT'] = df_results['Lucro HT'].apply(lambda x: f"{float(x):.2f}u")
-            df_results['Lucro FT'] = df_results['Lucro FT'].apply(lambda x: f"{float(x):.2f}u")
-
-            # Ordena por data (do mais recente para o mais antigo)
             df_results = df_results.sort_values('Data do Jogo', ascending=False)
 
-            # Adiciona linha de TOTAL
-            total_row = pd.DataFrame({
-                'Jogo': ['TOTAL'],
-                'Lucro HT': [f"{df_results['Lucro HT'].str.replace('u', '').astype(float).sum():.2f}u"],
-                'Lucro FT': [f"{df_results['Lucro FT'].str.replace('u', '').astype(float).sum():.2f}u"],
-                'Status': ['💰']
-            })
-            df_results = pd.concat([df_results, total_row], ignore_index=True)
-
-            # Formatação condicional (cores)
+            # Formatação condicional
             def color_profit(val):
                 if isinstance(val, str) and 'u' in val:
                     num = float(val.replace('u', ''))
@@ -1732,61 +1720,115 @@ def setup_saved_games_tab(df_live_clean, df_live_display, df_resultados):
                         return 'color: red; font-weight: bold;'
                 return ''
 
-            # Aplica formatação
             styled_df = df_results.style.map(color_profit, subset=['Lucro HT', 'Lucro FT'])
+            st.dataframe(styled_df, use_container_width=True, height=500)
 
-            # Exibe a tabela
-            st.dataframe(
-                styled_df,
-                use_container_width=True,
-                height=500
-            )
-
-            # Estatísticas de desempenho
-            st.markdown("### 📈 Projeção de Ganhos/Perdas (Odd Fixa: 1.60)")
+            # Nova seção: Tabela de Projeção de Ganhos/Perdas
+            st.markdown("### 📈 Projeção de Ganhos/Perdas")
 
             if total_games > 0:
+                odds_range = [1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00]
+                projection_data = []
+
+                for odd in odds_range:
+                    ht_profit = 0.0
+                    ft_profit = 0.0
+                    ht_greens = 0
+                    ht_reds = 0
+                    ft_greens = 0
+                    ft_reds = 0
+
+                    for _, game in st.session_state.saved_games.iterrows():
+                        result_data = df_resultados[
+                            (df_resultados['Mandante'] == game['Mandante']) &
+                            (df_resultados['Visitante'] == game['Visitante'])
+                        ]
+                        if not result_data.empty:
+                            latest_result = result_data.iloc[0]
+                            total_ht = latest_result.get('Mandante HT', 0) + latest_result.get('Visitante HT', 0)
+                            total_ft = latest_result.get('Mandante FT', 0) + latest_result.get('Visitante FT', 0)
+
+                            ht_p = calculate_profit(game.get('Sugestão HT', ''), total_ht, odd=odd)
+                            ft_p = calculate_profit(game.get('Sugestão FT', ''), total_ft, odd=odd)
+
+                            if ht_p > 0:
+                                ht_greens += 1
+                            elif ht_p < 0:
+                                ht_reds += 1
+                            if ft_p > 0:
+                                ft_greens += 1
+                            elif ft_p < 0:
+                                ft_reds += 1
+
+                            ht_profit += ht_p
+                            ft_profit += ft_p
+
+                    total_profit = ht_profit + ft_profit
+                    projection_data.append({
+                        'Odd': f"{odd:.2f}",
+                        'Total Jogos': total_games,
+                        'Greens HT': ht_greens,
+                        'Reds HT': ht_reds,
+                        'Greens FT': ft_greens,
+                        'Reds FT': ft_reds,
+                        'Lucro HT': f"{ht_profit:.2f}u",
+                        'Lucro FT': f"{ft_profit:.2f}u",
+                        'Lucro Total': f"{total_profit:.2f}u"
+                    })
+
+                df_projection = pd.DataFrame(projection_data)
+
+                # Formatação condicional para a tabela de projeção
+                styled_projection = df_projection.style.map(
+                    color_profit, subset=['Lucro HT', 'Lucro FT', 'Lucro Total']
+                ).format({
+                    'Odd': '{}',
+                    'Total Jogos': '{:.0f}',
+                    'Greens HT': '{:.0f}',
+                    'Reds HT': '{:.0f}',
+                    'Greens FT': '{:.0f}',
+                    'Reds FT': '{:.0f}',
+                    'Lucro HT': '{}',
+                    'Lucro FT': '{}',
+                    'Lucro Total': '{}'
+                })
+
+                st.dataframe(styled_projection, use_container_width=True)
+
+                # Resumo adicional
+                st.markdown("### 📊 Resumo Geral")
                 cols = st.columns(4)
-                cols[0].metric("Total de Jogos", total_games)
-                cols[1].metric("Lucro HT Total", f"{total_ht_profit:.2f}u")
-                cols[2].metric("Lucro FT Total", f"{total_ft_profit:.2f}u")
-                cols[3].metric("Lucro Combinado", f"{total_ht_profit + total_ft_profit:.2f}u")
+                cols[0].metric("Total de Jogos Analisados", total_games)
+                cols[1].metric("Greens HT", ht_greens)
+                cols[2].metric("Reds HT", ht_reds)
+                cols[3].metric("Lucro HT (Odd 1.60)", f"{total_ht_profit:.2f}u")
+                cols = st.columns(4)
+                cols[0].metric("Total de Jogos Analisados", total_games)
+                cols[1].metric("Greens FT", ft_greens)
+                cols[2].metric("Reds FT", ft_reds)
+                cols[3].metric("Lucro FT (Odd 1.60)", f"{total_ft_profit:.2f}u")
+                cols = st.columns(2)
+                cols[0].metric("Lucro Combinado (Odd 1.60)", f"{total_ht_profit + total_ft_profit:.2f}u")
 
-                # Gráfico de evolução
-                df_results['Lucro Acumulado HT'] = df_results['Lucro HT'].cumsum()
-                df_results['Lucro Acumulado FT'] = df_results['Lucro FT'].cumsum()
-
-                fig = px.line(df_results,
-                              x='Data do Jogo',
-                              y=['Lucro Acumulado HT', 'Lucro Acumulado FT'],
-                              title='Evolução do Lucro Acumulado')
-                st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("Nenhum jogo finalizado para calcular projeção de ganhos.")
+
         else:
             st.info("Nenhum resultado encontrado para análise.")
 
     # Seção para salvar jogos
     st.header("💾 Salvar Jogos")
-
     if not isinstance(st.session_state.saved_games, pd.DataFrame):
         st.session_state.saved_games = pd.DataFrame(columns=[
             'Hora', 'Liga', 'Mandante', 'Visitante',
             'Sugestão HT', 'Sugestão FT', 'Data Salvamento'
         ])
 
-    # Mostra os jogos salvos
     st.subheader("📋 Jogos Salvos")
     if st.session_state.saved_games.empty:
         st.info("Nenhum jogo salvo ainda. Selecione jogos da aba 'Ao Vivo' para salvá-los aqui.")
     else:
-        st.dataframe(
-            st.session_state.saved_games,
-            use_container_width=True,
-            height=400
-        )
-
-        # Botão para limpar todos os jogos salvos
+        st.dataframe(st.session_state.saved_games, use_container_width=True, height=400)
         if st.button("🗑️ Limpar Todos os Jogos Salvos", key="clear_all_saved"):
             st.session_state.saved_games = pd.DataFrame(columns=[
                 'Hora', 'Liga', 'Mandante', 'Visitante',
@@ -1794,8 +1836,6 @@ def setup_saved_games_tab(df_live_clean, df_live_display, df_resultados):
             ])
             st.success("Todos os jogos salvos foram removidos!")
             st.rerun()
-
-        # Exportar para CSV
         csv = st.session_state.saved_games.to_csv(index=False).encode('utf-8')
         st.download_button(
             label="📥 Exportar Jogos Salvos",
@@ -1812,7 +1852,7 @@ def app():
         initial_sidebar_state="expanded",
     )
 
-    st.title("🎮 FIFAlgorithm")
+    st.title("💀 FIFAlgorithm")
     brasil_timezone = pytz.timezone("America/Sao_Paulo")
     current_time_br = datetime.now(brasil_timezone).strftime("%H:%M:%S")
     st.markdown(f"**Última atualização:** {current_time_br}")
@@ -1829,13 +1869,13 @@ def app():
 
     # Reordenar as abas
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
-        ["⚡ Ao Vivo", "🎯 Radar FIFA", "💡 Dicas Inteligentes", "🤖 Previsão IA", "🔍 Análise Manual", "💰 Ganhos & Perdas",
-         "💾 Salvar Jogos"]
+        ["⚡️ Ao Vivo", "⭐️ Radar FIFA", "⭐️ Dicas Inteligentes", "⭐️ Previsão IA", "⭐️ Análise Manual", "💰 Ganhos & Perdas",
+         "✅ Salvar Jogos"]
     )
 
     # Aba 1: Ao Vivo
     with tab1:
-        st.header("🔥 lista de Jogos")
+        st.header("⚽️ Lista de Jogos")
 
         if not df_live_display.empty:
             # Configuração da tabela
