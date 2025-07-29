@@ -11,9 +11,11 @@ from typing import Optional
 import time
 from collections import defaultdict
 import pytz
+import plotly.express as px  # Adicionei esta importação para o gráfico
 
 # --- ADICIONE ESTAS NOVAS IMPORTAÇÕES AQUI ---
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+
 # ---------------------------------------------
 
 # Configuração de Logs
@@ -865,6 +867,7 @@ def generate_player_report(jogador: pd.Series) -> str:
 
     return "\n\n".join(report_parts)
 
+
 # Processamento de Dados Ao Vivo
 @st.cache_data(show_spinner=False, ttl=300)
 def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -1097,6 +1100,7 @@ def calcular_radar_fifa(df_live_clean: pd.DataFrame) -> pd.DataFrame:
                 df_radar[col] = "0%"
 
     return df_radar[colunas_radar_ordenadas]
+
 
 # Função de Carga de Dados Essenciais
 @st.cache_data(show_spinner=False, ttl=300)
@@ -1556,14 +1560,259 @@ def generate_ai_prediction(df_resultados: pd.DataFrame) -> None:
         st.info("Nenhuma sequência relevante encontrada nos últimos 20 jogos de cada liga.")
 
 
+# Adicione esta função ao seu código existente
+def setup_saved_games_tab(df_live_clean, df_live_display, df_resultados):
+    st.header("💾 Jogos Salvos - Análise")
+
+    # Inicialização segura
+    if 'saved_games' not in st.session_state:
+        st.session_state.saved_games = pd.DataFrame(columns=[
+            'Hora', 'Liga', 'Mandante', 'Visitante',
+            'Sugestão HT', 'Sugestão FT', 'Data Salvamento'
+        ])
+
+    # Função auxiliar para verificar status do jogo
+    def check_game_status(game_time, game_date=None):
+        """Classifica o status do jogo com base no horário e data"""
+        now = datetime.now(pytz.timezone("America/Sao_Paulo"))
+
+        try:
+            # Se temos data e hora, criamos um datetime completo
+            if game_date and isinstance(game_date, str):
+                game_datetime = datetime.strptime(f"{game_date} {game_time}", "%d/%m/%Y %H:%M")
+                game_datetime = pytz.timezone("America/Sao_Paulo").localize(game_datetime)
+
+                if game_datetime > now:
+                    return "⏳ A iniciar"
+                elif (now - game_datetime).total_seconds() < 3600:  # Menos de 1 hora do fim
+                    return "▶️ Em andamento"
+                else:
+                    return "✅ Finalizado"
+
+            # Se só temos hora, usamos lógica simplificada
+            game_hour = int(game_time.split(':')[0])
+            current_hour = int(now.strftime("%H"))
+
+            if game_hour > current_hour or (
+                    game_hour == current_hour and int(game_time.split(':')[1]) > int(now.strftime("%M"))):
+                return "⏳ A iniciar"
+            elif game_hour == current_hour and abs(int(game_time.split(':')[1]) - int(now.strftime("%M"))) < 30:
+                return "▶️ Em andamento"
+            else:
+                return "✅ Finalizado"
+        except:
+            return "✅ Finalizado"  # Default para finalizado se houver erro
+
+    # Função para calcular ganhos/perdas
+    def calculate_profit(suggestion, actual_score, odd=1.60):
+        """Calcula o lucro/prejuízo de uma aposta"""
+        if not suggestion or suggestion == "Sem Entrada":
+            return 0.0
+
+        try:
+            if "Over" in suggestion:
+                required = float(suggestion.split()[1])
+                if actual_score > required:
+                    return odd - 1  # Ganho
+                else:
+                    return -1  # Perda
+        except:
+            return 0.0
+        return 0.0
+
+    # Seção para análise de resultados
+    st.subheader("📊 Análise de Resultados")
+
+    if st.button("🔍 Atualizar Análise de Resultados", key="update_results_analysis"):
+        results = []
+        total_ht_profit = 0.0
+        total_ft_profit = 0.0
+        total_games = 0
+
+        for _, game in st.session_state.saved_games.iterrows():
+            status = check_game_status(game['Hora'], game.get('Data do Jogo', None))
+
+            # Se não tivermos data do jogo, tentamos buscar nos resultados
+            game_date = game.get('Data do Jogo', None)
+            if not game_date or game_date == "Aguardando":
+                result_data = df_resultados[
+                    (df_resultados['Mandante'] == game['Mandante']) &
+                    (df_resultados['Visitante'] == game['Visitante'])
+                    ]
+                if not result_data.empty:
+                    game_date = result_data.iloc[0].get('Data', "Aguardando")
+
+            if status != "✅ Finalizado":
+                results.append({
+                    'Hora': game['Hora'],
+                    'Data do Jogo': game_date if game_date else "Aguardando",
+                    'Jogo': f"{game['Mandante']} vs {game['Visitante']}",
+                    'Status': status,
+                    'Sugestão HT': game.get('Sugestão HT', 'N/A'),
+                    'Resultado HT': "N/A",
+                    'Lucro HT': 0.0,
+                    'Sugestão FT': game.get('Sugestão FT', 'N/A'),
+                    'Resultado FT': "N/A",
+                    'Lucro FT': 0.0
+                })
+                continue
+
+            # Busca resultados apenas para jogos finalizados
+            result_data = df_resultados[
+                (df_resultados['Mandante'] == game['Mandante']) &
+                (df_resultados['Visitante'] == game['Visitante'])
+                ]
+
+            if not result_data.empty:
+                latest_result = result_data.iloc[0]
+                total_ht = latest_result.get('Mandante HT', 0) + latest_result.get('Visitante HT', 0)
+                total_ft = latest_result.get('Mandante FT', 0) + latest_result.get('Visitante FT', 0)
+
+                # Calcula lucro/prejuízo
+                ht_profit = calculate_profit(game.get('Sugestão HT', ''), total_ht)
+                ft_profit = calculate_profit(game.get('Sugestão FT', ''), total_ft)
+
+                total_ht_profit += ht_profit
+                total_ft_profit += ft_profit
+                total_games += 1
+
+                results.append({
+                    'Hora': game['Hora'],
+                    'Data do Jogo': latest_result.get('Data', game_date if game_date else "Aguardando"),
+                    'Jogo': f"{game['Mandante']} vs {game['Visitante']}",
+                    'Status': status,
+                    'Sugestão HT': game.get('Sugestão HT', 'N/A'),
+                    'Resultado HT': f"{latest_result.get('Mandante HT', '?')}-{latest_result.get('Visitante HT', '?')}",
+                    'Lucro HT': ht_profit,
+                    'Sugestão FT': game.get('Sugestão FT', 'N/A'),
+                    'Resultado FT': f"{latest_result.get('Mandante FT', '?')}-{latest_result.get('Visitante FT', '?')}",
+                    'Lucro FT': ft_profit
+                })
+            else:
+                results.append({
+                    'Hora': game['Hora'],
+                    'Data do Jogo': game_date if game_date else "Aguardando",
+                    'Jogo': f"{game['Mandante']} vs {game['Visitante']}",
+                    'Status': status,
+                    'Sugestão HT': game.get('Sugestão HT', 'N/A'),
+                    'Resultado HT': "N/D",
+                    'Lucro HT': 0.0,
+                    'Sugestão FT': game.get('Sugestão FT', 'N/A'),
+                    'Resultado FT': "N/D",
+                    'Lucro FT': 0.0
+                })
+
+        if results:
+            # Cria DataFrame
+            df_results = pd.DataFrame(results)
+
+            # Formatação de 2 casas decimais + unidade 'u'
+            df_results['Lucro HT'] = df_results['Lucro HT'].apply(lambda x: f"{float(x):.2f}u")
+            df_results['Lucro FT'] = df_results['Lucro FT'].apply(lambda x: f"{float(x):.2f}u")
+
+            # Ordena por data (do mais recente para o mais antigo)
+            df_results = df_results.sort_values('Data do Jogo', ascending=False)
+
+            # Adiciona linha de TOTAL
+            total_row = pd.DataFrame({
+                'Jogo': ['TOTAL'],
+                'Lucro HT': [f"{df_results['Lucro HT'].str.replace('u', '').astype(float).sum():.2f}u"],
+                'Lucro FT': [f"{df_results['Lucro FT'].str.replace('u', '').astype(float).sum():.2f}u"],
+                'Status': ['💰']
+            })
+            df_results = pd.concat([df_results, total_row], ignore_index=True)
+
+            # Formatação condicional (cores)
+            def color_profit(val):
+                if isinstance(val, str) and 'u' in val:
+                    num = float(val.replace('u', ''))
+                    if num > 0:
+                        return 'color: green; font-weight: bold;'
+                    elif num < 0:
+                        return 'color: red; font-weight: bold;'
+                return ''
+
+            # Aplica formatação
+            styled_df = df_results.style.map(color_profit, subset=['Lucro HT', 'Lucro FT'])
+
+            # Exibe a tabela
+            st.dataframe(
+                styled_df,
+                use_container_width=True,
+                height=500
+            )
+
+            # Estatísticas de desempenho
+            st.markdown("### 📈 Projeção de Ganhos/Perdas (Odd Fixa: 1.60)")
+
+            if total_games > 0:
+                cols = st.columns(4)
+                cols[0].metric("Total de Jogos", total_games)
+                cols[1].metric("Lucro HT Total", f"{total_ht_profit:.2f}u")
+                cols[2].metric("Lucro FT Total", f"{total_ft_profit:.2f}u")
+                cols[3].metric("Lucro Combinado", f"{total_ht_profit + total_ft_profit:.2f}u")
+
+                # Gráfico de evolução
+                df_results['Lucro Acumulado HT'] = df_results['Lucro HT'].cumsum()
+                df_results['Lucro Acumulado FT'] = df_results['Lucro FT'].cumsum()
+
+                fig = px.line(df_results,
+                              x='Data do Jogo',
+                              y=['Lucro Acumulado HT', 'Lucro Acumulado FT'],
+                              title='Evolução do Lucro Acumulado')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Nenhum jogo finalizado para calcular projeção de ganhos.")
+        else:
+            st.info("Nenhum resultado encontrado para análise.")
+
+    # Seção para salvar jogos
+    st.header("💾 Salvar Jogos")
+
+    if not isinstance(st.session_state.saved_games, pd.DataFrame):
+        st.session_state.saved_games = pd.DataFrame(columns=[
+            'Hora', 'Liga', 'Mandante', 'Visitante',
+            'Sugestão HT', 'Sugestão FT', 'Data Salvamento'
+        ])
+
+    # Mostra os jogos salvos
+    st.subheader("📋 Jogos Salvos")
+    if st.session_state.saved_games.empty:
+        st.info("Nenhum jogo salvo ainda. Selecione jogos da aba 'Ao Vivo' para salvá-los aqui.")
+    else:
+        st.dataframe(
+            st.session_state.saved_games,
+            use_container_width=True,
+            height=400
+        )
+
+        # Botão para limpar todos os jogos salvos
+        if st.button("🗑️ Limpar Todos os Jogos Salvos", key="clear_all_saved"):
+            st.session_state.saved_games = pd.DataFrame(columns=[
+                'Hora', 'Liga', 'Mandante', 'Visitante',
+                'Sugestão HT', 'Sugestão FT', 'Data Salvamento'
+            ])
+            st.success("Todos os jogos salvos foram removidos!")
+            st.rerun()
+
+        # Exportar para CSV
+        csv = st.session_state.saved_games.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Exportar Jogos Salvos",
+            data=csv,
+            file_name='jogos_salvos.csv',
+            mime='text/csv'
+        )
+
+
 def app():
     st.set_page_config(
-        page_title="INIMIGOS DA 365",
+        page_title="FIFAlgorithm",
         layout="wide",
         initial_sidebar_state="expanded",
     )
 
-    st.title("💀 INIMIGOS DA 365")
+    st.title("🎮 FIFAlgorithm")
     brasil_timezone = pytz.timezone("America/Sao_Paulo")
     current_time_br = datetime.now(brasil_timezone).strftime("%H:%M:%S")
     st.markdown(f"**Última atualização:** {current_time_br}")
@@ -1579,117 +1828,54 @@ def app():
     df_stats_all_players = calcular_estatisticas_todos_jogadores(df_resultados)
 
     # Reordenar as abas
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-        ["📊 Ao Vivo", "🎯 Radar FIFA", "💡 Dicas Inteligentes", "🤖 Previsão IA", "🔍 Análise Manual", "💰 Ganhos & Perdas"]
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+        ["⚡ Ao Vivo", "🎯 Radar FIFA", "💡 Dicas Inteligentes", "🤖 Previsão IA", "🔍 Análise Manual", "💰 Ganhos & Perdas",
+         "💾 Salvar Jogos"]
     )
 
     # Aba 1: Ao Vivo
     with tab1:
-        st.header("🎮 Cronograma FIFA")
-
-        # Configuração CSS personalizada para eliminar espaços brancos
-        st.markdown("""
-        <style>
-            .ag-root-wrapper {
-                min-width: 100% !important;
-                border: none !important;
-            }
-            .ag-header-viewport {
-                background-color: #f0f2f6 !important;
-            }
-            .ag-cell {
-                padding: 5px 10px !important;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-
-        # Botões de controle
-        # Botões de controle com estilo melhorado
-        st.markdown("""
-        <style>
-            .stButton>button {
-                border: none;
-                background: linear-gradient(135deg, #e0e0e0 0%, #b8b8b8 100%);
-                color: #333;
-                padding: 8px 16px;
-                border-radius: 8px;
-                font-weight: 600;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                transition: all 0.3s ease;
-                margin-right: 10px;
-            }
-            .stButton>button:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-                background: linear-gradient(135deg, #d0d0d0 0%, #a8a8a8 100%);
-            }
-            .stButton>button:active {
-                transform: translateY(0);
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            .button-container {
-                display: flex;
-                gap: 10px;
-                margin-bottom: 20px;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-
-        # Container para os botões
-        st.markdown('<div class="button-container">', unsafe_allow_html=True)
-
-        col1, col2 = st.columns([1, 3])
-        with col1:
-            if st.button("🔄 Resetar Filtros", key="reset_filters"):
-                st.session_state.grid_key = str(time.time())
-        with col2:
-            if st.button("📊 Atualizar Dados", key="refresh_data"):
-                st.cache_data.clear()
-                st.rerun()
-
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.header("🔥 lista de Jogos")
 
         if not df_live_display.empty:
+            # Configuração da tabela
             gb = GridOptionsBuilder.from_dataframe(df_live_display)
-
-            # Configuração responsiva das colunas
-            gb.configure_default_column(
-                filterable=True,
-                sortable=True,
-                resizable=True,
-                wrapText=True,
-                autoHeight=True,
-                flex=1  # Distribuição flexível do espaço
-            )
-
-            # Configurações específicas para colunas importantes
-            gb.configure_column("Liga", minWidth=120, maxWidth=150)
-            gb.configure_column("Mandante", minWidth=120)
-            gb.configure_column("Visitante", minWidth=120)
-            gb.configure_column("Sugestão HT", minWidth=120)
-            gb.configure_column("Sugestão FT", minWidth=120)
+            gb.configure_default_column(filterable=True, sortable=True)
+            gb.configure_column("Selecionar",
+                                header_name="Selecionar",
+                                editable=True,
+                                cellRenderer='agCheckboxCellRenderer',
+                                cellEditor='agCheckboxCellEditor')
 
             grid_options = gb.build()
 
-            # Configurações finais do grid
-            grid_options['suppressHorizontalScroll'] = False
-            grid_options['alwaysShowHorizontalScroll'] = True
-            grid_options['domLayout'] = 'autoHeight'  # Ajuste automático de altura
-
-            # Exibição do grid
-            AgGrid(
+            # Renderização da tabela
+            grid_response = AgGrid(
                 df_live_display,
                 gridOptions=grid_options,
-                height=None,  # Altura automática
-                width='100%',
+                height=500,
                 theme='streamlit',
-                update_mode=GridUpdateMode.FILTERING_CHANGED,
-                allow_unsafe_jscode=True,
-                key=st.session_state.get('grid_key', 'default_grid'),
-                fit_columns_on_grid_load=True
+                update_mode=GridUpdateMode.MODEL_CHANGED,
+                key='main_table_123'
             )
+
+            # Botão de salvamento
+            if st.button("💾 Salvar Jogos Selecionados", key="save_btn_456"):
+                try:
+                    selected_rows = grid_response['data'][grid_response['data']['Selecionar'] == True]
+                    if not selected_rows.empty:
+                        st.session_state.saved_games = selected_rows[
+                            ['Hora', 'Liga', 'Mandante', 'Visitante', 'Sugestão HT', 'Sugestão FT']
+                        ].copy()
+                        st.success(f"✅ {len(selected_rows)} jogos salvos!")
+                        st.rerun()
+                    else:
+                        st.warning("Nenhum jogo selecionado")
+                except Exception as e:
+                    st.error(f"Erro: {str(e)}")
         else:
             st.warning("⏳ Nenhuma partida ao vivo no momento")
+            st.info("Quando houver partidas disponíveis, elas aparecerão aqui para seleção")
 
     # Aba 2: Radar FIFA
     with tab2:
@@ -1727,7 +1913,7 @@ def app():
         if df_resultados.empty:
             st.info("Carregando dados dos resultados para a análise manual...")
         all_players = sorted([re.sub(r'^[🥇🥈🥉]\s', '', p) for p in
-                            df_stats_all_players["Jogador"].unique()]) if not df_stats_all_players.empty else []
+                              df_stats_all_players["Jogador"].unique()]) if not df_stats_all_players.empty else []
         col_p1, col_p2 = st.columns(2)
         with col_p1:
             player1_manual = st.selectbox(
@@ -1761,7 +1947,7 @@ def app():
                     st.warning("Por favor, selecione jogadores diferentes.")
                 else:
                     perform_manual_analysis(df_resultados, player1_manual, player2_manual, num_games_h2h,
-                                        num_games_individual)
+                                            num_games_individual)
             else:
                 st.warning("Por favor, selecione ambos os jogadores.")
 
@@ -1790,6 +1976,11 @@ def app():
                 st.info("Por favor, selecione um jogador para ver a análise.")
         else:
             st.info("Nenhum dado de jogador disponível para análise.")
+
+        # Adicione isto no final da função app(), antes do if __name__:
+    with tab7:
+        setup_saved_games_tab(df_live_clean, df_live_display, df_resultados)
+
 
 if __name__ == "__main__":
     app()
