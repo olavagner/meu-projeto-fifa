@@ -1852,6 +1852,40 @@ def app():
         initial_sidebar_state="expanded",
     )
 
+    # CSS personalizado para melhorar a responsividade
+    st.markdown("""
+            <style>
+                /* Ajusta a tabela AgGrid para telas pequenas */
+                @media screen and (max-width: 768px) {
+                    .ag-root-wrapper {
+                        width: 100% !important;
+                        overflow-x: auto !important;
+                    }
+                    .ag-header-cell-label {
+                        font-size: 12px !important;
+                    }
+                    .ag-cell {
+                        font-size: 11px !important;
+                        padding: 2px 5px !important;
+                    }
+                }
+
+                /* Melhora a visualização em mobile */
+                .stDataFrame {
+                    width: 100% !important;
+                }
+
+                /* Ajusta o padding das abas para mobile */
+                .stTabs [data-baseweb="tab-list"] {
+                    flex-wrap: wrap;
+                }
+                .stTabs [data-baseweb="tab"] {
+                    padding: 0.25rem 0.5rem;
+                    font-size: 0.8rem;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+
     st.title("💀 FIFAlgorithm")
     brasil_timezone = pytz.timezone("America/Sao_Paulo")
     current_time_br = datetime.now(brasil_timezone).strftime("%H:%M:%S")
@@ -1875,28 +1909,59 @@ def app():
 
     # Aba 1: Ao Vivo
     with tab1:
-        st.header("⚽️ Lista de Jogos")
+        st.header("🎮 Lista de Jogos")
 
         if not df_live_display.empty:
-            # Configuração da tabela
+            # Configuração da tabela para ser responsiva
             gb = GridOptionsBuilder.from_dataframe(df_live_display)
-            gb.configure_default_column(filterable=True, sortable=True)
+            gb.configure_default_column(
+                filterable=True,
+                sortable=True,
+                resizable=True,
+                wrapText=True,
+                autoHeight=True
+            )
+
+            # Adiciona a coluna de seleção
             gb.configure_column("Selecionar",
                                 header_name="Selecionar",
                                 editable=True,
                                 cellRenderer='agCheckboxCellRenderer',
-                                cellEditor='agCheckboxCellEditor')
+                                cellEditor='agCheckboxCellEditor',
+                                width=100)
+
+            # Ajusta o tamanho das colunas para mobile
+            gb.configure_column("Hora", width=80)
+            gb.configure_column("Liga", width=120)
+            gb.configure_column("Mandante", width=150)
+            gb.configure_column("Visitante", width=150)
+            gb.configure_column("GP", width=60)
+            gb.configure_column("GC", width=60)
+            gb.configure_column("Over Mandante", width=120)
+            gb.configure_column("Over Visitante", width=120)
+            gb.configure_column("Sugestão HT", width=120)
+            gb.configure_column("Sugestão FT", width=120)
 
             grid_options = gb.build()
 
-            # Renderização da tabela
+            # Renderização da tabela com configurações responsivas
             grid_response = AgGrid(
                 df_live_display,
                 gridOptions=grid_options,
-                height=500,
+                height=min(600, 35 + 35 * len(df_live_display)),
+                width='100%',
+                fit_columns_on_grid_load=True,
                 theme='streamlit',
                 update_mode=GridUpdateMode.MODEL_CHANGED,
-                key='main_table_123'
+                key='main_table_123',
+                enable_enterprise_modules=False,
+                reload_data=False,
+                try_to_convert_back_to_original_types=False,
+                custom_css={
+                    "#gridToolBar": {
+                        "padding-bottom": "0px !important",
+                    }
+                }
             )
 
             # Botão de salvamento
