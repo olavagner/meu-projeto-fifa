@@ -1,0 +1,16 @@
+{
+    "keys": {
+        "84cc6f7158afdb86": {
+            "email": "umbrellawins@gmail.com",
+            "created": "2025-07-31 23:07:57",
+            "expires": "2025-08-07 23:07:57",
+            "active": true
+        }
+    },
+    "users": {
+        "vsembrani@gmail.com": {
+            "password": "2da50ff9ac9d95aeaecf1360e7c82cdfb8825f581e8f4c63b6eb68ae941b3dc2",
+            "is_admin": true
+        }
+    }
+}
