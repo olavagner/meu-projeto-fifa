@@ -478,6 +478,31 @@ def login_page() -> None:
                     unsafe_allow_html=True
                 )
 
+                # Botão para simular pagamento (apenas para teste)
+                if st.button("✅ Simular Pagamento (Apenas para Testes)", type="primary"):
+                    new_key = generate_key(
+                        cliente["plano"]["dias"],
+                        owner=cliente["nome"],
+                        notes=f"Comprado via PIX - WhatsApp: {cliente['whatsapp']}"
+                    )
+                    register_sale(
+                        days=cliente["plano"]["dias"],
+                        price=cliente["plano"]["preco"],
+                        buyer_info={
+                            "nome": cliente["nome"],
+                            "email": cliente["email"],
+                            "whatsapp": cliente["whatsapp"],
+                            "metodo": "PIX"
+                        },
+                        key_generated=new_key
+                    )
+                    st.success("✅ Pagamento confirmado! Sua chave de acesso é:")
+                    st.code(new_key)
+                    st.warning("Anote esta chave em um local seguro! Ela não será exibida novamente.")
+                    del st.session_state["plano_selecionado"]
+                    del st.session_state["dados_cliente"]
+
+
 def admin_panel() -> None:
     """Painel administrativo"""
     st.title("🔧 Painel Administrativo")
@@ -815,6 +840,33 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
             sugestao_ht = sugerir_over_ht(gols_ht_media_confronto)
             sugestao_ft = sugerir_over_ft(gols_ft_media_confronto)
 
+            # Novas colunas Over Mandante e Over Visitante
+            over_mandante = ""
+            over_visitante = ""
+
+            # Lógica para Over Mandante
+            if 2.30 <= gp_calc <= 3.39:
+                over_mandante = f"1.5 {m}"
+            elif 3.40 <= gp_calc <= 4.50:
+                over_mandante = f"2.5 {m}"
+
+            # Lógica para Over Visitante
+            if 2.30 <= gc_calc <= 3.39:
+                over_visitante = f"1.5 {v}"
+            elif 3.40 <= gc_calc <= 4.50:
+                over_visitante = f"2.5 {v}"
+
+            # Adiciona ícones de cor
+            if "1.5" in over_mandante:
+                over_mandante = f"🟡 {over_mandante}"
+            elif "2.5" in over_mandante:
+                over_mandante = f"🟢 {over_mandante}"
+
+            if "1.5" in over_visitante:
+                over_visitante = f"🟡 {over_visitante}"
+            elif "2.5" in over_visitante:
+                over_visitante = f"🟢 {over_visitante}"
+
             stats_rows.append(
                 {
                     "J1": jm,
@@ -825,6 +877,8 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
                     "Gols FT": gols_ft_media_confronto,
                     "Sugestão HT": sugestao_ht,
                     "Sugestão FT": sugestao_ft,
+                    "Over Mandante": over_mandante,
+                    "Over Visitante": over_visitante,
                     "0.5 HT": format_stats(sm["over_05_ht_hits"], jm, sv["over_05_ht_hits"], jv),
                     "1.5 HT": format_stats(sm["over_15_ht_hits"], jm, sv["over_15_ht_hits"], jv),
                     "2.5 HT": format_stats(sm["over_25_ht_hits"], jm, sv["over_25_ht_hits"], jv),
@@ -852,6 +906,7 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
 
         colunas_ao_vivo_solicitadas = [
             "Hora", "Liga", "Mandante", "Visitante", "GP", "GC",
+            "Over Mandante", "Over Visitante",  # Novas colunas
             "Sugestão HT", "Sugestão FT"
         ]
 
@@ -861,8 +916,6 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
         logger.error(f"Erro ao carregar dados ao vivo: {e}")
         st.error(f"❌ Erro ao carregar e processar dados ao vivo.")
         return pd.DataFrame(), pd.DataFrame()
-
-
 # ==============================================
 # FUNÇÕES AUXILIARES DE ANÁLISE
 # ==============================================
@@ -1353,6 +1406,12 @@ def fifalgorithm_app():
     with tabs[0]:
         st.header("🎮 𝐋𝐢𝐬𝐭𝐚 𝐝𝐞 𝐉𝐨𝐠𝐨𝐬")
 
+        # Mostra o total de jogos disponíveis
+        if not df_live_display.empty:
+            st.subheader(f"📊 {len(df_live_display)} Jogos Disponíveis nas Próximas Horas")
+        else:
+            st.warning("⏳ Nenhuma partida ao vivo no momento")
+
         # CSS personalizado
         st.markdown("""
         <style>
@@ -1366,88 +1425,144 @@ def fifalgorithm_app():
         """, unsafe_allow_html=True)
 
         if not df_live_display.empty:
-            # Configuração da tabela interativa
-            gb = GridOptionsBuilder.from_dataframe(df_live_display)
+            # Configuração dos filtros na sidebar
+            with st.sidebar:
+                st.subheader("🔍 Filtros Avançados")
 
-            # Configuração padrão
+                # Filtro por Liga
+                ligas_disponiveis = df_live_display['Liga'].unique()
+                ligas_selecionadas = st.multiselect(
+                    'Selecione as Ligas:',
+                    options=ligas_disponiveis,
+                    default=ligas_disponiveis
+                )
+
+                # Filtro por Sugestão HT
+                sugestoes_ht = df_live_display['Sugestão HT'].unique()
+                ht_selecionados = st.multiselect(
+                    'Filtrar por Sugestão HT:',
+                    options=sugestoes_ht,
+                    default=sugestoes_ht
+                )
+
+                # Filtro por Sugestão FT
+                sugestoes_ft = df_live_display['Sugestão FT'].unique()
+                ft_selecionados = st.multiselect(
+                    'Filtrar por Sugestão FT:',
+                    options=sugestoes_ft,
+                    default=sugestoes_ft
+                )
+
+                # Filtro por Over Mandante
+                over_mandante_opcoes = df_live_display['Over Mandante'].unique()
+                over_mandante_selecionados = st.multiselect(
+                    'Filtrar por Over Mandante:',
+                    options=over_mandante_opcoes,
+                    default=over_mandante_opcoes
+                )
+
+                # Filtro por Over Visitante
+                over_visitante_opcoes = df_live_display['Over Visitante'].unique()
+                over_visitante_selecionados = st.multiselect(
+                    'Filtrar por Over Visitante:',
+                    options=over_visitante_opcoes,
+                    default=over_visitante_opcoes
+                )
+
+                # Botão para resetar filtros
+                if st.button("🔄 Resetar Filtros"):
+                    ligas_selecionadas = ligas_disponiveis
+                    ht_selecionados = sugestoes_ht
+                    ft_selecionados = sugestoes_ft
+                    over_mandante_selecionados = over_mandante_opcoes
+                    over_visitante_selecionados = over_visitante_opcoes
+
+            # Aplicar filtros
+            df_filtrado = df_live_display[
+                (df_live_display['Liga'].isin(ligas_selecionadas)) &
+                (df_live_display['Sugestão HT'].isin(ht_selecionados)) &
+                (df_live_display['Sugestão FT'].isin(ft_selecionados)) &
+                (df_live_display['Over Mandante'].isin(over_mandante_selecionados)) &
+                (df_live_display['Over Visitante'].isin(over_visitante_selecionados))
+                ]
+
+            # Atualizar contador de jogos filtrados
+            st.write(f"🔍 Mostrando {len(df_filtrado)} de {len(df_live_display)} jogos")
+
+            # Configuração da tabela interativa com AgGrid
+            gb = GridOptionsBuilder.from_dataframe(df_filtrado)
+
+            # Configuração padrão com seleção múltipla de colunas
             gb.configure_default_column(
                 flex=1,
                 minWidth=100,
                 wrapText=True,
                 autoHeight=True,
-                cellClass="hide-on-mobile"
+                editable=False,
+                filterable=True,
+                sortable=True
             )
 
-            # Configurar colunas essenciais
-            essential_columns = ['Hora', 'Liga', 'Mandante', 'Visitante', 'GP', 'GC', 'Sugestão HT', 'Sugestão FT']
-            for col in essential_columns:
-                if col in df_live_display.columns:
-                    gb.configure_column(col, cellClass=None, minWidth=80)
-
             # Configurar coluna de seleção
-            if "Selecionar" not in df_live_display.columns:
-                df_live_display["Selecionar"] = False
+            gb.configure_selection(
+                selection_mode='multiple',
+                use_checkbox=True,
+                rowMultiSelectWithClick=True
+            )
 
-            gb.configure_column("Selecionar",
-                                header_name="✓",
-                                editable=True,
-                                cellRenderer='agCheckboxCellRenderer',
-                                width=50,
-                                cellClass=None)
+            # Configurar todas as colunas como filtros
+            for col in df_filtrado.columns:
+                gb.configure_column(col, header_name=col, filter=True)
 
             grid_options = gb.build()
 
             # Renderizar tabela
             grid_response = AgGrid(
-                df_live_display,
+                df_filtrado,
                 gridOptions=grid_options,
-                height=min(500, 35 + 35 * len(df_live_display)),
+                height=min(600, 35 + 35 * len(df_filtrado)),
                 width='100%',
                 fit_columns_on_grid_load=False,
                 theme='streamlit',
                 update_mode=GridUpdateMode.MODEL_CHANGED,
                 allow_unsafe_jscode=True,
-                key='live_matches_grid'
+                enable_enterprise_modules=True,
+                custom_css={
+                    "#gridToolBar": {
+                        "padding-bottom": "0px !important",
+                    }
+                }
             )
 
             # Botão de salvamento
             if st.button("💾 Salvar Jogos Selecionados", type="primary"):
-                try:
-                    selected_rows = grid_response['data'][grid_response['data']['Selecionar'] == True]
-                    if not selected_rows.empty:
-                        # Adiciona data de salvamento
-                        selected_rows['Data Salvamento'] = datetime.now().strftime("%d/%m/%Y %H:%M")
+                selected_rows = grid_response['selected_rows']
+                if not selected_rows.empty:  # Verifica se o DataFrame não está vazio
+                    selected_df = pd.DataFrame(selected_rows)
+                    # Adiciona data de salvamento
+                    selected_df['Data Salvamento'] = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-                        # Atualiza jogos salvos
-                        if 'saved_games' not in st.session_state:
-                            st.session_state.saved_games = selected_rows[essential_columns + ['Data Salvamento']]
-                        else:
-                            # Evita duplicatas
-                            new_games = selected_rows[essential_columns + ['Data Salvamento']]
-                            existing_games = st.session_state.saved_games
-
-                            # Filtra jogos que já existem
-                            mask = ~new_games.apply(lambda row:
-                                                    (existing_games['Mandante'] == row['Mandante']) &
-                                                    (existing_games['Visitante'] == row['Visitante']) &
-                                                    (existing_games['Hora'] == row['Hora']), axis=1).any(axis=1)
-
-                            new_unique_games = new_games[mask]
-
-                            if not new_unique_games.empty:
-                                st.session_state.saved_games = pd.concat(
-                                    [existing_games, new_unique_games]
-                                ).drop_duplicates()
-                                st.success(f"✅ {len(new_unique_games)} novos jogos salvos!")
-                            else:
-                                st.warning("Nenhum jogo novo para salvar (todos já estão na lista)")
+                    # Atualiza jogos salvos
+                    if 'saved_games' not in st.session_state:
+                        st.session_state.saved_games = selected_df
                     else:
-                        st.warning("Nenhum jogo selecionado")
-                except Exception as e:
-                    st.error(f"Erro ao salvar: {str(e)}")
-        else:
-            st.warning("⏳ Nenhuma partida ao vivo no momento")
-            st.info("As partidas aparecerão aqui quando estiverem disponíveis")
+                        # Evita duplicatas
+                        existing_games = st.session_state.saved_games
+                        mask = selected_df.apply(
+                            lambda row: ~((existing_games['Mandante'] == row['Mandante']) &
+                                          (existing_games['Visitante'] == row['Visitante']) &
+                                          (existing_games['Hora'] == row['Hora'])).any(),
+                            axis=1
+                        )
+                        new_games = selected_df[mask]
+
+                        if not new_games.empty:
+                            st.session_state.saved_games = pd.concat([existing_games, new_games])
+                            st.success(f"✅ {len(new_games)} novos jogos salvos!")
+                        else:
+                            st.warning("Nenhum jogo novo para salvar (todos já estão na lista)")
+                else:
+                    st.warning("Nenhum jogo selecionado")
 
     # Aba 2: Radar FIFA
     with tabs[1]:
