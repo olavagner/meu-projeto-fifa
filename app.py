@@ -478,31 +478,6 @@ def login_page() -> None:
                     unsafe_allow_html=True
                 )
 
-                # Botão para simular pagamento (apenas para teste)
-                if st.button("✅ Simular Pagamento (Apenas para Testes)", type="primary"):
-                    new_key = generate_key(
-                        cliente["plano"]["dias"],
-                        owner=cliente["nome"],
-                        notes=f"Comprado via PIX - WhatsApp: {cliente['whatsapp']}"
-                    )
-                    register_sale(
-                        days=cliente["plano"]["dias"],
-                        price=cliente["plano"]["preco"],
-                        buyer_info={
-                            "nome": cliente["nome"],
-                            "email": cliente["email"],
-                            "whatsapp": cliente["whatsapp"],
-                            "metodo": "PIX"
-                        },
-                        key_generated=new_key
-                    )
-                    st.success("✅ Pagamento confirmado! Sua chave de acesso é:")
-                    st.code(new_key)
-                    st.warning("Anote esta chave em um local seguro! Ela não será exibida novamente.")
-                    del st.session_state["plano_selecionado"]
-                    del st.session_state["dados_cliente"]
-
-
 def admin_panel() -> None:
     """Painel administrativo"""
     st.title("🔧 Painel Administrativo")
