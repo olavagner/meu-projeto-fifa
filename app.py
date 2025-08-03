@@ -19,7 +19,8 @@ import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 import qrcode
 from io import BytesIO
-import base64  # <--- ADICIONE ESTA LINHA AQUI
+import base64
+import threading
 
 # ==============================================
 # CONFIGURAÇÕES INICIAIS
@@ -57,6 +58,39 @@ COMPETICOES_PERMITIDAS = {
     "E-soccer - GT Leagues - 12 mins de jogo",
     "E-soccer - Battle - 8 minutos de jogo",
 }
+
+# Variável global para controle de atualização
+UPDATE_INTERVAL = 300  # 5 minutos em segundos
+last_update_time = time.time()
+
+
+# ==============================================
+# FUNÇÕES DE ATUALIZAÇÃO AUTOMÁTICA
+# ==============================================
+
+def start_auto_update():
+    """Inicia a thread de atualização automática"""
+
+    def update_loop():
+        while True:
+            time.sleep(UPDATE_INTERVAL)
+            if st.session_state.get("authenticated", False):
+                st.session_state["force_update"] = True
+                st.rerun()
+
+    if not hasattr(st.session_state, 'update_thread'):
+        st.session_state.update_thread = threading.Thread(target=update_loop, daemon=True)
+        st.session_state.update_thread.start()
+
+
+def check_for_updates():
+    """Verifica se é hora de atualizar os dados"""
+    global last_update_time
+    current_time = time.time()
+    if current_time - last_update_time >= UPDATE_INTERVAL:
+        last_update_time = current_time
+        return True
+    return False
 
 
 # ==============================================
@@ -296,24 +330,17 @@ def generate_pix_payment(payer_name: str, amount: float) -> dict:
             "amount": f"{amount:.2f}",
             "beneficiary": "FIFAlgorithm"
         }
-    except Exception as e:
-        st.error(f"Erro no pagamento PIX: {e}")
-        return {
-            "qr_code": None,
-            "pix_code": "",
-            "pix_key": PIX_CPF,
-            "amount": f"{amount:.2f}",
-            "beneficiary": "FIFAlgorithm"
-        }
 
 
 # ==============================================
 # INTERFACES DE USUÁRIO
 # ==============================================
 
+# ... (código anterior permanece o mesmo até a seção de login_page)
+
 def login_page() -> None:
     """Página de login e compra de acesso"""
-    st.title("⚡️ Acesso ao FIFAlgorithm 🎮")
+    st.title("🎮 Bem Vindos ao FIFAlgorithm")
 
     # CSS personalizado
     st.markdown("""
@@ -349,7 +376,22 @@ def login_page() -> None:
             border-radius: 10px;
             padding: 20px;
             margin-top: 20px;
-            background-color: #f0fff0;
+            background-color: #1a1a1a;
+            color: #ffffff;
+        }
+        .pix-container h3 {
+            color: #32CD32 !important;
+        }
+        .pix-container code {
+            background-color: #333333;
+            color: #ffffff !important;
+            font-size: 20px;
+            padding: 8px;
+            border-radius: 4px;
+            display: inline-block;
+        }
+        .pix-container p {
+            color: #ffffff !important;
         }
         .whatsapp-btn {
             background-color: #25D366;
@@ -360,6 +402,18 @@ def login_page() -> None:
             text-decoration: none;
             display: inline-block;
             margin-top: 10px;
+        }
+        .warning-box {
+            border: 2px solid #ff4b4b;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            background-color: #2a2a2a;
+            color: #ffffff;
+        }
+        .warning-box h4 {
+            color: #ff4b4b !important;
+            margin-top: 0;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -385,7 +439,22 @@ def login_page() -> None:
     # Seção de compra de acesso via PIX (só mostra se não estiver autenticado)
     if not st.session_state.get("authenticated", False):
         st.markdown("---")
-        st.header("🔑 Comprar Novo Acesso via PIX")
+        st.header("🔑 Comprar Chave de acesso via PIX")
+
+        # Mensagem de aviso sobre compartilhamento
+        st.markdown("""
+        <div class="warning-box">
+            <h4>⚠️ ATENÇÃO: POLÍTICA DE USO</h4>
+            <p>
+                <strong>COMPARTILHAR SUA CHAVE RESULTARÁ EM BANIMENTO PERMANENTE!</strong><br><br>
+                Cada chave é pessoal e intransferível. Nosso sistema monitora:<br>
+                • Endereço IP<br>
+                • Endereço MAC<br>
+                • Dispositivos conectados<br><br>
+                Violações resultarão em banimento imediato sem reembolso.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
         # Inicializa os dados do cliente se não existirem
         if "dados_cliente" not in st.session_state:
@@ -434,32 +503,26 @@ def login_page() -> None:
 
                 if st.form_submit_button("Confirmar Dados"):
                     # Atualiza os dados de forma segura
-                    novos_dados = {
+                    st.session_state.dados_cliente.update({
                         "nome": nome,
                         "email": email,
                         "whatsapp": whatsapp,
                         "plano": plano
-                    }
-                    st.session_state.dados_cliente.update(novos_dados)
+                    })
                     st.rerun()
 
             # Mostrar instruções de pagamento se os dados estiverem completos
-            if all([st.session_state.dados_cliente["nome"],
-                    st.session_state.dados_cliente["email"],
-                    st.session_state.dados_cliente["whatsapp"]]):
-
-                cliente = st.session_state.dados_cliente
-
-                # Container com informações do PIX
+            if (st.session_state.dados_cliente["nome"] and
+                    st.session_state.dados_cliente["email"] and
+                    st.session_state.dados_cliente["whatsapp"]):
+                # Container com informações do PIX (modo dark)
                 st.markdown(f"""
                 <div class="pix-container">
-                    <h3 style="color: #006400;">⚡️ Pagamento via PIX</h3>
+                    <h3>⚡️ Pagamento via PIX</h3>
                     <div style="margin-top: 15px;">
                         <p style="font-size: 18px;"><strong>Chave PIX (CPF):</strong></p>
-                        <div style="background: #f8f9fa; padding: 10px; border-radius: 5px; margin: 10px 0;">
-                            <code style="font-size: 20px;">019.059.900-65</code>
-                        </div>
-                        <p style="font-size: 16px;"><strong>Valor:</strong> R$ {cliente["plano"]["preco"]},00</p>
+                        <code>019.059.900-65</code>
+                        <p style="font-size: 16px; margin-top: 10px;"><strong>Valor:</strong> R$ {plano["preco"]},00</p>
                         <p style="font-size: 16px; margin-top: 15px;">Após o pagamento, envie o comprovante para:</p>
                         <div style="margin-top: 10px;">
                             <p style="font-size: 16px;"><strong>Telegram:</strong> @vagsembrani</p>
@@ -470,38 +533,13 @@ def login_page() -> None:
                 """, unsafe_allow_html=True)
 
                 # Link para WhatsApp
-                whatsapp_url = f"https://wa.me/5549991663166?text=Olá! Enviei o comprovante PIX para o FIFAlgorithm - Plano: {cliente['plano']['nome']} - Valor: R$ {cliente['plano']['preco']}"
+                whatsapp_url = f"https://wa.me/5549991663166?text=Olá! Enviei o comprovante PIX para o FIFAlgorithm - Plano: {plano['nome']} - Valor: R$ {plano['preco']}"
                 st.markdown(
                     f'<a href="{whatsapp_url}" class="whatsapp-btn" target="_blank">'
                     '📱 Enviar Comprovante no WhatsApp'
                     '</a>',
                     unsafe_allow_html=True
                 )
-
-                # Botão para simular pagamento (apenas para teste)
-                if st.button("✅ Simular Pagamento (Apenas para Testes)", type="primary"):
-                    new_key = generate_key(
-                        cliente["plano"]["dias"],
-                        owner=cliente["nome"],
-                        notes=f"Comprado via PIX - WhatsApp: {cliente['whatsapp']}"
-                    )
-                    register_sale(
-                        days=cliente["plano"]["dias"],
-                        price=cliente["plano"]["preco"],
-                        buyer_info={
-                            "nome": cliente["nome"],
-                            "email": cliente["email"],
-                            "whatsapp": cliente["whatsapp"],
-                            "metodo": "PIX"
-                        },
-                        key_generated=new_key
-                    )
-                    st.success("✅ Pagamento confirmado! Sua chave de acesso é:")
-                    st.code(new_key)
-                    st.warning("Anote esta chave em um local seguro! Ela não será exibida novamente.")
-                    del st.session_state["plano_selecionado"]
-                    del st.session_state["dados_cliente"]
-
 
 def admin_panel() -> None:
     """Painel administrativo"""
@@ -646,10 +684,10 @@ def admin_panel() -> None:
             col1.metric("Total de Vendas PIX", f"R$ {total_vendas:.2f}")
             col2.metric("Vendas PIX (30 dias)", f"R$ {vendas_30d:.2f}")
 
+            # ==============================================
+            # FUNÇÕES DO FIFALGORITHM (ANÁLISE DE PARTIDAS)
+            # ==============================================
 
-# ==============================================
-# FUNÇÕES DO FIFALGORITHM (ANÁLISE DE PARTIDAS)
-# ==============================================
 
 def requisicao_segura(url: str, timeout: int = 15) -> Optional[requests.Response]:
     """Realiza uma requisição HTTP segura"""
@@ -916,6 +954,8 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
         logger.error(f"Erro ao carregar dados ao vivo: {e}")
         st.error(f"❌ Erro ao carregar e processar dados ao vivo.")
         return pd.DataFrame(), pd.DataFrame()
+
+
 # ==============================================
 # FUNÇÕES AUXILIARES DE ANÁLISE
 # ==============================================
@@ -1352,9 +1392,18 @@ def fifalgorithm_app():
         initial_sidebar_state="expanded",
     )
 
+    # Inicia a thread de atualização automática
+    start_auto_update()
+
     brasil_timezone = pytz.timezone("America/Sao_Paulo")
     current_time_br = datetime.now(brasil_timezone).strftime("%H:%M:%S")
     st.title("💀 FIFAlgorithm")
+
+    # Adiciona indicador de atualização automática
+    if st.session_state.get("force_update", False):
+        st.success("✅ Dados atualizados automaticamente!")
+        st.session_state["force_update"] = False
+
     st.markdown(f"**🔷 Última atualização:** {current_time_br}")
 
     # Carrega os dados essenciais
@@ -1385,6 +1434,7 @@ def fifalgorithm_app():
         df_live_clean = pd.DataFrame()
         df_live_display = pd.DataFrame()
         df_stats_all_players = pd.DataFrame()
+
     # Barra lateral com informações da conta
     with st.sidebar:
         st.subheader(f"⭐️ Conta: {st.session_state['key_info']['owner']}")
@@ -2483,6 +2533,16 @@ def calculate_profit(suggestion, actual_score, odd=1.60):
 def main():
     """Função principal que controla o fluxo do aplicativo"""
     st.set_page_config(page_title="FIFAlgorithm", layout="wide")
+
+    # Inicializa o sistema de atualização automática
+    if 'last_update_time' not in st.session_state:
+        st.session_state.last_update_time = time.time()
+
+    # Verifica se é hora de atualizar
+    if time.time() - st.session_state.last_update_time > UPDATE_INTERVAL:
+        st.session_state.last_update_time = time.time()
+        st.session_state.force_update = True
+        st.rerun()
 
     # Verificação de acesso admin
     if st.query_params.get("admin") == SECRET_KEY:
