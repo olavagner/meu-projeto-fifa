@@ -17,7 +17,6 @@ import time
 from collections import defaultdict
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
-import qrcode
 from io import BytesIO
 import base64  # <--- ADICIONE ESTA LINHA AQUI
 
