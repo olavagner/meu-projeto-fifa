@@ -17,6 +17,7 @@ import time
 from collections import defaultdict
 import plotly.express as px
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+import qrcode
 from io import BytesIO
 import base64  # <--- ADICIONE ESTA LINHA AQUI
 
@@ -501,6 +502,7 @@ def login_page() -> None:
                     del st.session_state["plano_selecionado"]
                     del st.session_state["dados_cliente"]
 
+
 def admin_panel() -> None:
     """Painel administrativo"""
     st.title("🔧 Painel Administrativo")
@@ -611,10 +613,16 @@ def admin_panel() -> None:
             df_sales["Nome"] = df_sales["buyer"].apply(lambda x: x.get("nome", "N/A"))
             df_sales["WhatsApp"] = df_sales["buyer"].apply(lambda x: x.get("whatsapp", "N/A"))
             df_sales["E-mail"] = df_sales["buyer"].apply(lambda x: x.get("email", "N/A"))
-            df_sales["Data"] = pd.to_datetime(df_sales["date"]).dt.strftime("%d/%m/%Y %H:%M")
+
+            # Corrigir a comparação de datas
+            df_sales["Data"] = pd.to_datetime(df_sales["date"], utc=True).dt.tz_convert(None)  # Remove timezone
+            df_sales["Data"] = df_sales["Data"].dt.strftime('%d/%m/%Y %H:%M')
+
+            # Corrigir o cálculo da expiração
             df_sales["Expiração"] = (
-                        pd.to_datetime(df_sales["date"]) + pd.to_timedelta(df_sales["days"], unit="d")).dt.strftime(
-                "%d/%m/%Y")
+                    pd.to_datetime(df_sales["date"], utc=True) +
+                    pd.to_timedelta(df_sales["days"], unit="d")
+            ).dt.tz_convert(None).dt.strftime('%d/%m/%Y')
 
             # Filtra apenas vendas PIX
             df_sales = df_sales[df_sales["buyer"].apply(lambda x: x.get("metodo", "") == "PIX")]
@@ -627,8 +635,12 @@ def admin_panel() -> None:
             # Estatísticas financeiras
             st.subheader("Resumo Financeiro")
             total_vendas = df_sales["price"].sum()
-            vendas_30d = df_sales[pd.to_datetime(df_sales["date"]) > (datetime.now() - timedelta(days=30))][
-                "price"].sum()
+
+            # Corrigir a comparação de datas para vendas dos últimos 30 dias
+            thirty_days_ago = datetime.now() - timedelta(days=30)
+            vendas_30d = df_sales[
+                pd.to_datetime(df_sales["date"], utc=True).dt.tz_convert(None) > thirty_days_ago
+                ]["price"].sum()
 
             col1, col2 = st.columns(2)
             col1.metric("Total de Vendas PIX", f"R$ {total_vendas:.2f}")
