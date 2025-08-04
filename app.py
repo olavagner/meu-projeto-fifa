@@ -99,7 +99,11 @@ def check_for_updates():
 
 def hash_key(key: str) -> str:
     """Cria hash SHA256 da chave para armazenamento seguro"""
-    return hashlib.sha256((key + SECRET_KEY).encode()).hexdigest()
+    # Garante que a SECRET_KEY está definida e é string
+    secret = SECRET_KEY if SECRET_KEY else ""
+    # Converte para bytes explicitamente
+    key_bytes = (key + secret).encode('utf-8')
+    return hashlib.sha256(key_bytes).hexdigest()
 
 
 def load_keys() -> dict:
@@ -108,6 +112,68 @@ def load_keys() -> dict:
         with open(KEYS_FILE, "r") as f:
             return json.load(f)
     return {}
+
+
+def debug_key_system(key: str):
+    """Função para depurar o sistema de chaves"""
+    print("\n=== DEBUG DO SISTEMA DE CHAVES ===")
+
+    # Verifica se a chave foi fornecida
+    if not key:
+        print("❌ Nenhuma chave fornecida")
+        return
+
+    print(f"Chave fornecida: {key}")
+
+    # Carrega todas as chaves
+    keys = load_keys()
+    if not keys:
+        print("❌ Nenhuma chave cadastrada no sistema")
+        return
+
+    print(f"Total de chaves cadastradas: {len(keys)}")
+
+    # Calcula o hash da chave fornecida
+    hashed_key = hash_key(key)
+    print(f"Hash da chave fornecida: {hashed_key}")
+
+    # Verifica se o hash existe no sistema
+    if hashed_key not in keys:
+        print("❌ Hash da chave não encontrado no sistema")
+        print("Chaves existentes:")
+        for hk in keys:
+            print(f"- {hk}")
+        return
+
+    print("✅ Hash da chave encontrado no sistema")
+    key_data = keys[hashed_key]
+
+    # Verifica status da chave
+    is_active = key_data.get("active", True)
+    print(f"Status da chave: {'Ativa' if is_active else 'Inativa'}")
+    if not is_active:
+        print("❌ Chave inativada")
+        return
+
+    # Verifica data de expiração
+    try:
+        expiration_date = datetime.fromisoformat(key_data["expires"])
+        now = datetime.now(pytz.utc)
+        print(f"Data de expiração: {expiration_date}")
+        print(f"Data atual: {now}")
+
+        if now > expiration_date:
+            print("❌ Chave expirada")
+            return
+        else:
+            remaining = expiration_date - now
+            print(f"✅ Chave válida (Tempo restante: {remaining})")
+    except Exception as e:
+        print(f"❌ Erro ao verificar data de expiração: {str(e)}")
+        return
+
+    print("=== CHAVE VÁLIDA ===")
+    return key_data
 
 
 def save_keys(keys: dict) -> None:
@@ -168,51 +234,73 @@ def generate_key(days_valid: int, owner: str = "admin", notes: str = "") -> str:
     }
 
     save_keys(keys)
+
+    # DEBUG: Mostra informações da chave gerada
+    print(f"\nNova chave gerada:")
+    print(f"- Chave: {key}")
+    print(f"- Hash: {hashed_key}")
+    print(f"- Validade: {days_valid} dias")
+    print(f"- Criada em: {creation_date}")
+    print(f"- Expira em: {expiration_date}")
+
     return key
 
 
 def validate_key(key: str) -> Optional[dict]:
-    """Valida uma chave de acesso"""
-    hashed_key = hash_key(key)
-    keys = load_keys()
-
-    if hashed_key not in keys:
+    """Valida uma chave de acesso com tratamento robusto de erros"""
+    if not key or len(key) != 16:  # Verifica comprimento da chave
         return None
 
-    key_data = keys[hashed_key]
+    try:
+        keys = load_keys()
+        if not keys:
+            return None
 
-    if not key_data.get("active", True):
-        return None
+        hashed_key = hash_key(key)
+        if hashed_key not in keys:
+            return None
 
-    expiration_date = datetime.fromisoformat(key_data["expires"])
-    if datetime.now(pytz.utc) > expiration_date:
-        return None
+        key_data = keys[hashed_key]
 
-    # Registra o uso
-    usage = load_usage()
-    if hashed_key not in usage:
-        usage[hashed_key] = {
+        # Verifica status
+        if not key_data.get("active", True):
+            return None
+
+        # Corrige formato da data se necessário
+        expires = key_data["expires"]
+        if 'T' not in expires:
+            expires = expires.replace(' ', 'T') + 'Z'
+
+        expiration_date = datetime.fromisoformat(expires.replace('Z', '+00:00'))
+
+        if datetime.now(pytz.utc) > expiration_date:
+            return None
+
+        # Atualiza uso
+        usage = load_usage()
+        usage.setdefault(hashed_key, {
             "first_used": datetime.now(pytz.utc).isoformat(),
             "last_used": datetime.now(pytz.utc).isoformat(),
-            "usage_count": 1
-        }
-    else:
+            "usage_count": 0
+        })
         usage[hashed_key]["last_used"] = datetime.now(pytz.utc).isoformat()
         usage[hashed_key]["usage_count"] += 1
+        save_usage(usage)
 
-    save_usage(usage)
+        return {
+            "key": key,
+            "hashed_key": hashed_key,
+            "owner": key_data["owner"],
+            "created": key_data["created"],
+            "expires": key_data["expires"],
+            "days_valid": key_data["days_valid"],
+            "notes": key_data["notes"],
+            "remaining_days": (expiration_date - datetime.now(pytz.utc)).days
+        }
 
-    return {
-        "key": key,
-        "hashed_key": hashed_key,
-        "owner": key_data["owner"],
-        "created": key_data["created"],
-        "expires": key_data["expires"],
-        "days_valid": key_data["days_valid"],
-        "notes": key_data["notes"],
-        "remaining_days": (expiration_date - datetime.now(pytz.utc)).days
-    }
-
+    except Exception as e:
+        print(f"Erro na validação: {str(e)}")
+        return None
 
 def revoke_key(hashed_key: str) -> bool:
     """Revoga uma chave de acesso"""
@@ -339,102 +427,73 @@ def generate_pix_payment(payer_name: str, amount: float) -> dict:
 # ... (código anterior permanece o mesmo até a seção de login_page)
 
 def login_page() -> None:
-    """Página de login e compra de acesso"""
+    """Página de login com tratamento robusto de erros e modo depuração"""
     st.title("🎮 Bem Vindos ao FIFAlgorithm")
 
-    # CSS personalizado
+    # CSS para mensagens de erro
     st.markdown("""
     <style>
-        .stTextInput input {
-            font-size: 18px !important;
-            padding: 10px !important;
-        }
-        .stButton button {
-            width: 100%;
-            padding: 10px;
-            font-size: 18px;
-        }
-        .plan-box {
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            padding: 15px;
-            margin: 10px 0;
-            background-color: #f9f9f9;
-        }
-        .plan-title {
-            font-weight: bold;
-            font-size: 18px;
-            color: #2e86de;
-        }
-        .plan-price {
-            font-size: 24px;
-            font-weight: bold;
-            color: #10ac84;
-        }
-        .pix-container {
-            border: 2px solid #32CD32;
-            border-radius: 10px;
-            padding: 20px;
-            margin-top: 20px;
-            background-color: #1a1a1a;
-            color: #ffffff;
-        }
-        .pix-container h3 {
-            color: #32CD32 !important;
-        }
-        .pix-container code {
-            background-color: #333333;
-            color: #ffffff !important;
-            font-size: 20px;
-            padding: 8px;
-            border-radius: 4px;
-            display: inline-block;
-        }
-        .pix-container p {
-            color: #ffffff !important;
-        }
-        .whatsapp-btn {
-            background-color: #25D366;
-            color: white;
-            border-radius: 5px;
-            padding: 10px 15px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            margin-top: 10px;
-        }
-        .warning-box {
-            border: 2px solid #ff4b4b;
-            border-radius: 10px;
-            padding: 15px;
-            margin: 15px 0;
+        .error-box {
+            border-left: 4px solid #ff4b4b;
+            padding: 1rem;
             background-color: #2a2a2a;
-            color: #ffffff;
-        }
-        .warning-box h4 {
-            color: #ff4b4b !important;
-            margin-top: 0;
+            margin-bottom: 1rem;
         }
     </style>
     """, unsafe_allow_html=True)
 
-    # Formulário de login
     with st.form("login_form"):
-        key = st.text_input("Digite sua chave de acesso:", type="password")
+        key = st.text_input("Digite sua chave de acesso:", type="password",
+                            help="A chave deve ter 16 caracteres alfanuméricos")
         submitted = st.form_submit_button("Acessar Sistema")
 
         if submitted:
             if not key:
                 st.error("Por favor, insira uma chave de acesso")
             else:
-                key_info = validate_key(key)
-                if key_info:
-                    st.session_state["authenticated"] = True
-                    st.session_state["key_info"] = key_info
-                    st.session_state["current_tab"] = "⚡️ Ao Vivo"
-                    st.rerun()
-                else:
-                    st.error("Chave inválida ou expirada. Compre um novo acesso abaixo.")
+                try:
+                    # Modo depuração - mostra informações detalhadas
+                    if st.session_state.get("debug_mode", False):
+                        debug_info = debug_key_system(key)
+                        with st.expander("🔧 Informações de Depuração", expanded=True):
+                            st.json(debug_info)
+
+                    key_info = validate_key(key)
+
+                    if key_info:
+                        st.session_state.update({
+                            "authenticated": True,
+                            "key_info": key_info,
+                            "current_tab": "⚡️ Ao Vivo",
+                            "debug_mode": False  # Desativa debug após login bem-sucedido
+                        })
+                        st.rerun()
+                    else:
+                        st.markdown("""
+                        <div class="error-box">
+                            <h4>❌ Chave inválida ou expirada</h4>
+                            <p>Possíveis causas:</p>
+                            <ul>
+                                <li>Chave digitada incorretamente (exatamente 16 caracteres)</li>
+                                <li>Chave expirada (validade encerrada)</li>
+                                <li>Chave revogada pelo administrador</li>
+                                <li>Problema no sistema de autenticação</li>
+                            </ul>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        # Botão para ativar modo depuração
+                        if st.button("🔍 Depurar Problema de Chave"):
+                            st.session_state["debug_mode"] = True
+                            st.rerun()
+
+                except Exception as e:
+                    logger.error(f"Erro crítico no login: {str(e)}", exc_info=True)
+                    st.error(f"Erro no sistema de autenticação. Detalhes: {str(e)}")
+
+                    if st.secrets.get("ADMIN_MODE"):
+                        with st.expander("Detalhes Técnicos (Admin Only)"):
+                            st.exception(e)
 
     # Seção de compra de acesso via PIX (só mostra se não estiver autenticado)
     if not st.session_state.get("authenticated", False):
@@ -2532,8 +2591,31 @@ def calculate_profit(suggestion, actual_score, odd=1.60):
 
 def main():
     """Função principal que controla o fluxo do aplicativo"""
+    # Configuração inicial da página
     st.set_page_config(page_title="FIFAlgorithm", layout="wide")
 
+    # ==============================================
+    # INICIALIZAÇÃO DO SISTEMA (PARTE NOVA)
+    # ==============================================
+    # Garante que a estrutura de diretórios e arquivos existe
+    DATA_DIR.mkdir(exist_ok=True, parents=True)
+    KEYS_FILE.touch(exist_ok=True)
+    USAGE_FILE.touch(exist_ok=True)
+    SALES_FILE.touch(exist_ok=True)
+
+    # Cria chave admin inicial se for primeiro acesso e existir no secrets
+    if not load_keys() and st.secrets.get("ADMIN_KEY"):
+        generate_key(
+            days_valid=365,
+            owner="admin",
+            notes="Chave admin inicial",
+            key=st.secrets.ADMIN_KEY  # Usa a chave definida nos secrets
+        )
+        logger.info("Sistema inicializado com chave admin padrão")
+
+    # ==============================================
+    # LÓGICA EXISTENTE (MANTIDA COM MELHORIAS)
+    # ==============================================
     # Inicializa o sistema de atualização automática
     if 'last_update_time' not in st.session_state:
         st.session_state.last_update_time = time.time()
@@ -2544,16 +2626,18 @@ def main():
         st.session_state.force_update = True
         st.rerun()
 
-    # Verificação de acesso admin
+    # Controle de acesso
     if st.query_params.get("admin") == SECRET_KEY:
-        st.session_state["admin"] = True
-        st.session_state["authenticated"] = True
+        st.session_state.update({
+            "admin": True,
+            "authenticated": True,
+            "current_tab": "⚡️ Ao Vivo"
+        })
         admin_panel()
     elif not st.session_state.get("authenticated"):
         login_page()
     else:
         fifalgorithm_app()
-
 
 if __name__ == "__main__":
     main()
