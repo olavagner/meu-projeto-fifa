@@ -1810,8 +1810,8 @@ def fifalgorithm_app():
         else:
             # Configurações mais rigorosas
             MIN_JOGOS_CONFRONTO = 5
-            MIN_PORCENTAGEM = 70  # Aumentado para 70% conforme solicitado
-            MAX_SUGESTOES_POR_PARTIDA = 5  # Limite de sugestões por partida
+            MIN_PORCENTAGEM = 75  # Aumentado para 75% conforme solicitado
+            MAX_SUGESTOES_POR_PARTIDA = 8  # Limite de sugestões por partida
 
             # Definindo todos os mercados solicitados com seus respectivos critérios
             TIPOS_APOSTA = {
