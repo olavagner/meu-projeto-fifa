@@ -845,7 +845,7 @@ def fifalgorithm_app():
         st.session_state["current_tab"] = "⚡️ Ao Vivo"
 
     tabs = st.tabs(["⚡️ Ao Vivo", "⭐️ Radar FIFA", "⭐️ Dicas Inteligentes", "⭐️ Previsão IA", "⭐️ Análise Manual",
-                    "💰 Ganhos & Perdas", "✅ Salvar Jogos"])
+                    "💰 Ganhos & Perdas", "✅ Salvar Jogos", "📊 Resultados", "📈 Relatórios"])
 
     # Aba 1: Ao Vivo
     with tabs[0]:
@@ -1686,6 +1686,324 @@ def fifalgorithm_app():
                 file_name='jogos_salvos.csv',
                 mime='text/csv'
             )
+
+    with tabs[7]:  # Agora a aba 7 é "Resultados"
+        st.header("📊 Resultados Históricos")
+
+        if df_resultados.empty:
+            st.warning("Nenhum dado de resultados disponível no momento.")
+        else:
+            # Filtros
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                ligas_disponiveis = df_resultados['Liga'].unique()
+                liga_selecionada = st.selectbox(
+                    'Filtrar por Liga:',
+                    options=['Todas'] + list(ligas_disponiveis),
+                    index=0
+                )
+
+            with col2:
+                jogadores_disponiveis = sorted(
+                    list(set(df_resultados['Mandante'].unique()) | set(df_resultados['Visitante'].unique())))
+                jogador_selecionado = st.selectbox(
+                    'Filtrar por Jogador:',
+                    options=['Todos'] + jogadores_disponiveis,
+                    index=0
+                )
+
+            with col3:
+                num_jogos = st.slider(
+                    'Número de jogos a exibir:',
+                    min_value=10,
+                    max_value=500,
+                    value=100,
+                    step=10
+                )
+
+            # Aplicar filtros
+            df_filtrado = df_resultados.copy()
+            if liga_selecionada != 'Todas':
+                df_filtrado = df_filtrado[df_filtrado['Liga'] == liga_selecionada]
+            if jogador_selecionado != 'Todos':
+                df_filtrado = df_filtrado[
+                    (df_filtrado['Mandante'] == jogador_selecionado) |
+                    (df_filtrado['Visitante'] == jogador_selecionado)
+                    ]
+
+            df_filtrado = df_filtrado.sort_values('Data', ascending=False).head(num_jogos)
+
+            # Mostrar estatísticas resumidas
+            st.subheader("📈 Estatísticas Resumidas")
+            if not df_filtrado.empty:
+                total_jogos = len(df_filtrado)
+                avg_gols_ht = df_filtrado['Total HT'].mean()
+                avg_gols_ft = df_filtrado['Total FT'].mean()
+                over_25_ft = (df_filtrado['Total FT'] > 2.5).mean() * 100
+                over_15_ht = (df_filtrado['Total HT'] > 1.5).mean() * 100
+                btts_ft = ((df_filtrado['Mandante FT'] > 0) & (df_filtrado['Visitante FT'] > 0)).mean() * 100
+
+                cols = st.columns(5)
+                cols[0].metric("Total de Jogos", total_jogos)
+                cols[1].metric("Média Gols HT", f"{avg_gols_ht:.2f}")
+                cols[2].metric("Média Gols FT", f"{avg_gols_ft:.2f}")
+                cols[3].metric("Over 2.5 FT", f"{over_25_ft:.1f}%")
+                cols[4].metric("BTTS FT", f"{btts_ft:.1f}%")
+
+            # Mostrar tabela de resultados
+            st.subheader("📋 Últimos Resultados")
+
+            # Selecionar colunas para exibição
+            colunas_exibicao = [
+                'Data', 'Liga', 'Mandante', 'Visitante',
+                'Mandante HT', 'Visitante HT', 'Total HT',
+                'Mandante FT', 'Visitante FT', 'Total FT'
+            ]
+
+            # Configurar AgGrid
+            gb = GridOptionsBuilder.from_dataframe(df_filtrado[colunas_exibicao])
+            gb.configure_default_column(
+                flex=1,
+                minWidth=100,
+                wrapText=True,
+                autoHeight=True,
+                resizable=True
+            )
+
+            # Configurar paginação
+            gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
+
+            # Configurar filtros
+            for col in colunas_exibicao:
+                gb.configure_column(col, header_name=col, filter=True)
+
+            grid_options = gb.build()
+
+            # Exibir tabela
+            AgGrid(
+                df_filtrado[colunas_exibicao],
+                gridOptions=grid_options,
+                height=600,
+                width='100%',
+                fit_columns_on_grid_load=False,
+                theme='streamlit',
+                update_mode=GridUpdateMode.MODEL_CHANGED,
+                allow_unsafe_jscode=True
+            )
+
+            # Botão para download
+            csv = df_filtrado[colunas_exibicao].to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Exportar Resultados",
+                data=csv,
+                file_name='resultados_fifa.csv',
+                mime='text/csv'
+            )
+
+    with tabs[8]:  # Nova aba "Relatórios"
+        st.header("📈 Relatórios de Oportunidades (Confrontos Diretos)")
+        st.write(
+            "Analisa apenas confrontos diretos com histórico de pelo menos 5 jogos para identificar as melhores oportunidades")
+
+        if df_live_clean.empty or df_resultados.empty:
+            st.warning("Dados insuficientes para gerar relatórios. Aguarde a atualização.")
+        else:
+            # Configurações mais rigorosas
+            MIN_JOGOS_CONFRONTO = 5
+            MIN_PORCENTAGEM = 70
+            TIPOS_APOSTA = {
+                "Vencedor da Partida": {
+                    "col": "Vencedor",
+                    "analysis": lambda df, p1, p2: {
+                        "total": len(df),
+                        "p1_wins": len(df[((df["Mandante"] == p1) & (df["Mandante FT"] > df["Visitante FT"])) |
+                                          ((df["Visitante"] == p1) & (df["Visitante FT"] > df["Mandante FT"]))]),
+                        "p2_wins": len(df[((df["Mandante"] == p2) & (df["Mandante FT"] > df["Visitante FT"])) |
+                                          ((df["Visitante"] == p2) & (df["Visitante FT"] > df["Mandante FT"]))]),
+                        "draws": len(df[df["Mandante FT"] == df["Visitante FT"]])
+                    },
+                    "threshold": MIN_PORCENTAGEM
+                },
+                "Empate FT": {
+                    "col": "Empate",
+                    "analysis": lambda df, p1, p2: {
+                        "total": len(df),
+                        "hits": len(df[df["Mandante FT"] == df["Visitante FT"]])
+                    },
+                    "threshold": MIN_PORCENTAGEM
+                },
+                "BTTS HT": {
+                    "col": "BTTS HT",
+                    "analysis": lambda df, p1, p2: {
+                        "total": len(df),
+                        "hits": len(df[(df["Mandante HT"] > 0) & (df["Visitante HT"] > 0)])
+                    },
+                    "threshold": 75
+                },
+                "OVER 3.5 FT": {
+                    "col": "Over 3.5",
+                    "analysis": lambda df, p1, p2: {
+                        "total": len(df),
+                        "hits": len(df[(df["Mandante FT"] + df["Visitante FT"]) > 3.5])
+                    },
+                    "threshold": MIN_PORCENTAGEM
+                },
+                "OVER 4.5 FT": {
+                    "col": "Over 4.5",
+                    "analysis": lambda df, p1, p2: {
+                        "total": len(df),
+                        "hits": len(df[(df["Mandante FT"] + df["Visitante FT"]) > 4.5])
+                    },
+                    "threshold": MIN_PORCENTAGEM
+                },
+                "OVER 5.5 FT": {
+                    "col": "Over 5.5",
+                    "analysis": lambda df, p1, p2: {
+                        "total": len(df),
+                        "hits": len(df[(df["Mandante FT"] + df["Visitante FT"]) > 5.5])
+                    },
+                    "threshold": 65
+                }
+            }
+
+            # Obter hora atual
+            brasil_tz = pytz.timezone('America/Sao_Paulo')
+            hora_atual = datetime.now(brasil_tz).strftime("%H:%M")
+
+            # Processar cada jogo ao vivo FUTURO (hora > hora_atual)
+            relatorios = []
+            jogos_com_historico = 0
+
+            # Ordenar jogos ao vivo por hora (do mais próximo para o mais distante)
+            df_live_futuro = df_live_clean[df_live_clean['Hora'] > hora_atual].sort_values('Hora', ascending=True)
+
+            for _, jogo in df_live_futuro.iterrows():
+                p1 = jogo["Mandante"]
+                p2 = jogo["Visitante"]
+                liga = jogo["Liga"]
+                hora_jogo = jogo["Hora"]
+
+                # Filtrar jogos históricos entre esses jogadores
+                df_historico = df_resultados[
+                    ((df_resultados["Mandante"] == p1) & (df_resultados["Visitante"] == p2)) |
+                    ((df_resultados["Mandante"] == p2) & (df_resultados["Visitante"] == p1))
+                    ]
+
+                if len(df_historico) >= MIN_JOGOS_CONFRONTO:
+                    jogos_com_historico += 1
+
+                    # Analisar confrontos diretos para cada tipo de aposta
+                    for aposta, config in TIPOS_APOSTA.items():
+                        stats = config["analysis"](df_historico, p1, p2)
+                        threshold = config["threshold"]
+
+                        if aposta == "Vencedor da Partida":
+                            p1_win_rate = (stats["p1_wins"] / stats["total"]) * 100 if stats["total"] > 0 else 0
+                            p2_win_rate = (stats["p2_wins"] / stats["total"]) * 100 if stats["total"] > 0 else 0
+                            draw_rate = (stats["draws"] / stats["total"]) * 100 if stats["total"] > 0 else 0
+
+                            if p1_win_rate >= threshold:
+                                relatorios.append({
+                                    "Hora": hora_jogo,  # Usar a hora do jogo futuro
+                                    "Liga": liga,
+                                    "Jogo": f"{p1} x {p2}",
+                                    "Tipo Aposta": f"Vitória {p1}",
+                                    "Estatística": f"VENCEU {stats['p1_wins']} DE {stats['total']} JOGOS ({p1_win_rate:.0f}%)",
+                                    "Confiança": "🟢 Alta" if p1_win_rate >= 80 else "🟡 Média",
+                                    "Jogos Analisados": stats["total"]
+                                })
+                            if p2_win_rate >= threshold:
+                                relatorios.append({
+                                    "Hora": hora_jogo,
+                                    "Liga": liga,
+                                    "Jogo": f"{p1} x {p2}",
+                                    "Tipo Aposta": f"Vitória {p2}",
+                                    "Estatística": f"VENCEU {stats['p2_wins']} DE {stats['total']} JOGOS ({p2_win_rate:.0f}%)",
+                                    "Confiança": "🟢 Alta" if p2_win_rate >= 80 else "🟡 Média",
+                                    "Jogos Analisados": stats["total"]
+                                })
+                            if draw_rate >= threshold:
+                                relatorios.append({
+                                    "Hora": hora_jogo,
+                                    "Liga": liga,
+                                    "Jogo": f"{p1} x {p2}",
+                                    "Tipo Aposta": "Empate FT",
+                                    "Estatística": f"OCORREU {stats['draws']} DE {stats['total']} JOGOS ({draw_rate:.0f}%)",
+                                    "Confiança": "🟢 Alta" if draw_rate >= 80 else "🟡 Média",
+                                    "Jogos Analisados": stats["total"]
+                                })
+                        else:
+                            hits = stats["hits"]
+                            total = stats["total"]
+                            porcentagem = (hits / total) * 100 if total > 0 else 0
+
+                            if porcentagem >= threshold:
+                                relatorios.append({
+                                    "Hora": hora_jogo,
+                                    "Liga": liga,
+                                    "Jogo": f"{p1} x {p2}",
+                                    "Tipo Aposta": aposta,
+                                    "Estatística": f"OCORREU EM {hits} DE {total} JOGOS ({porcentagem:.0f}%)",
+                                    "Confiança": "🟢 Alta" if porcentagem >= 80 else "🟡 Média",
+                                    "Jogos Analisados": total
+                                })
+
+            # Resumo inicial
+            st.markdown(f"""
+            ### 🔍 Relatório de Análise (Próximos Jogos)
+            - **Hora atual:** {hora_atual}
+            - **Próximos jogos ao vivo analisados:** {len(df_live_futuro)}
+            - **Jogos com histórico suficiente (≥{MIN_JOGOS_CONFRONTO} confrontos diretos):** {jogos_com_historico}
+            - **Oportunidades identificadas:** {len(relatorios)}
+            """)
+
+            if relatorios:
+                df_relatorios = pd.DataFrame(relatorios)
+
+                # Ordenar por hora do jogo (do mais próximo para o mais distante)
+                df_relatorios = df_relatorios.sort_values("Hora", ascending=True)
+
+                # Agrupar por jogo com expanders
+                st.subheader("🎯 Melhores Oportunidades nos Próximos Jogos")
+                for jogo in df_relatorios["Jogo"].unique():
+                    df_jogo = df_relatorios[df_relatorios["Jogo"] == jogo]
+                    hora_jogo = df_jogo["Hora"].iloc[0]
+                    with st.expander(f"⚽ {jogo} (Hora: {hora_jogo}) - {len(df_jogo)} oportunidades"):
+                        for _, row in df_jogo.iterrows():
+                            st.success(
+                                f"**{row['Tipo Aposta']}**\n\n"
+                                f"- {row['Estatística']}\n"
+                                f"- Confiança: {row['Confiança']}\n"
+                                f"- Jogos analisados: {row['Jogos Analisados']}"
+                            )
+
+                # Tabela detalhada
+                st.subheader("📋 Detalhes de Todas as Oportunidades (Ordenadas por Hora)")
+                st.dataframe(
+                    df_relatorios,
+                    column_config={
+                        "Jogos Analisados": st.column_config.NumberColumn(format="%d jogos")
+                    },
+                    use_container_width=True,
+                    height=600
+                )
+
+                # Botão para exportar
+                csv = df_relatorios.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Exportar Relatórios Completos",
+                    data=csv,
+                    file_name='relatorios_proximos_jogos.csv',
+                    mime='text/csv',
+                    help="Exporta todas as oportunidades identificadas para um arquivo CSV"
+                )
+            else:
+                st.info("""
+                Nenhuma oportunidade de aposta identificada nos próximos jogos com base nos critérios:
+                - Mínimo de 5 confrontos diretos históricos
+                - Porcentagem de acerto acima do limiar definido para cada mercado
+                """)
+
 
 
 # ==============================================
