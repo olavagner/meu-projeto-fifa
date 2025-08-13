@@ -848,6 +848,7 @@ def fifalgorithm_app():
                     "💰 Ganhos & Perdas", "✅ Salvar Jogos", "📊 Resultados", "📈 Relatórios"])
 
     # Aba 1: Ao Vivo
+    # Aba 1: Ao Vivo
     with tabs[0]:
         st.header("🎮 𝐋𝐢𝐬𝐭𝐚 𝐝𝐞 𝐉𝐨𝐠𝐨𝐬")
 
@@ -931,33 +932,75 @@ def fifalgorithm_app():
                 (df_live_display['Over Visitante'].isin(over_visitante_selecionados))
                 ]
 
-            # Atualizar contador de jogos filtrados
-            st.write(f"🔍 Mostrando {len(df_filtrado)} de {len(df_live_display)} jogos")
+            # Adicionar classificação Over/Under (GP + GC)
+            # Adicionar classificação Over/Under (GP + GC)
+            # Adicionar classificação Over/Under (GP + GC)
+            # Adicionar classificação Over/Under (GP + GC)
+            if 'GP' in df_live_clean.columns and 'GC' in df_live_clean.columns:
+                df_live_clean['Total_Gols'] = df_live_clean['GP'] + df_live_clean['GC']
+                df_live_clean['Over - Under'] = df_live_clean['Total_Gols'].apply(
+                    lambda x:
+                    '🔵 SUPER OVER' if x >= 4.5 else
+                    '🟢 OVER' if x >= 3.45 else
+                    '🔴 UNDER'
+                )
 
-            # Configuração da tabela interativa com AgGrid
+                # Mesclar com df_filtrado
+                df_filtrado = df_filtrado.merge(
+                    df_live_clean[['Hora', 'Liga', 'Mandante', 'Visitante', 'Over - Under']],
+                    on=['Hora', 'Liga', 'Mandante', 'Visitante'],
+                    how='left'
+                )
+
+            # Configuração da tabela AgGrid
             gb = GridOptionsBuilder.from_dataframe(df_filtrado)
 
-            # Configuração padrão com seleção múltipla de colunas
+            # Configurar todas as colunas
+            for col in df_filtrado.columns:
+                if col == 'Over - Under':
+                    gb.configure_column(
+                        col,
+                        header_name="Over - Under",
+                        width=120,
+                        cellStyle={
+                            'styleConditions': [
+                                {'condition': "params.value.includes('SUPER OVER')",
+                                 'style': {'backgroundColor': '#e6f3ff'}},
+                                {'condition': "params.value.includes('OVER')", 'style': {'backgroundColor': '#e6ffe6'}},
+                                {'condition': "params.value.includes('UNDER')", 'style': {'backgroundColor': '#ffe6e6'}}
+                            ]
+                        },
+                        filter=True,
+                        filterParams={
+                            'filterOptions': ['equals'],
+                            'defaultOption': 'equals',
+                            'caseSensitive': False
+                        }
+                    )
+                else:
+                    gb.configure_column(
+                        col,
+                        filter=True,
+                        width=100 if col in ['Hora', 'Liga'] else None,
+                        wrapText=True,
+                        autoHeight=True
+                    )
+
+            # Configurações gerais
             gb.configure_default_column(
                 flex=1,
-                minWidth=100,
+                minWidth=80,
                 wrapText=True,
                 autoHeight=True,
                 editable=False,
-                filterable=True,
                 sortable=True
             )
 
-            # Configurar coluna de seleção
             gb.configure_selection(
                 selection_mode='multiple',
                 use_checkbox=True,
                 rowMultiSelectWithClick=True
             )
-
-            # Configurar todas as colunas como filtros
-            for col in df_filtrado.columns:
-                gb.configure_column(col, header_name=col, filter=True)
 
             grid_options = gb.build()
 
@@ -965,7 +1008,7 @@ def fifalgorithm_app():
             grid_response = AgGrid(
                 df_filtrado,
                 gridOptions=grid_options,
-                height=min(600, 35 + 35 * len(df_filtrado)),
+                height=min(800, 40 + 40 * len(df_filtrado)),
                 width='100%',
                 fit_columns_on_grid_load=False,
                 theme='streamlit',
@@ -973,9 +1016,8 @@ def fifalgorithm_app():
                 allow_unsafe_jscode=True,
                 enable_enterprise_modules=True,
                 custom_css={
-                    "#gridToolBar": {
-                        "padding-bottom": "0px !important",
-                    }
+                    "#gridToolBar": {"padding-bottom": "0px !important"},
+                    ".ag-cell": {"display": "flex", "align-items": "center"}
                 }
             )
 
@@ -1800,24 +1842,22 @@ def fifalgorithm_app():
                 mime='text/csv'
             )
 
-    with tabs[8]:  # Nova aba "Relatórios"
-        st.header("📈 Relatórios de Oportunidades (Confrontos Diretos)")
-        st.write(
-            "Analisa apenas confrontos diretos com histórico de pelo menos 5 jogos para identificar as melhores oportunidades")
+    with tabs[8]:  # Aba "Relatórios"
+        st.header("🎯 Relatórios de Confrontos Diretos")
+        st.write("Análise baseada exclusivamente em confrontos diretos históricos (mínimo 5 jogos)")
 
         if df_live_clean.empty or df_resultados.empty:
             st.warning("Dados insuficientes para gerar relatórios. Aguarde a atualização.")
         else:
-            # Configurações mais rigorosas
+            # Configurações rigorosas conforme solicitado
             MIN_JOGOS_CONFRONTO = 5
-            MIN_PORCENTAGEM = 75  # Aumentado para 75% conforme solicitado
-            MAX_SUGESTOES_POR_PARTIDA = 8  # Limite de sugestões por partida
+            MIN_PORCENTAGEM = 78  # Mínimo de 78% de acerto histórico
+            MAX_SUGESTOES_POR_PARTIDA = 5  # Limite de sugestões por partida
 
-            # Definindo todos os mercados solicitados com seus respectivos critérios
+            # Definindo todos os mercados com priorização de linhas mais altas
             TIPOS_APOSTA = {
                 "Vencedor da Partida": {
-                    "col": "Vencedor",
-                    "analysis": lambda df, p1, p2: {
+                    "analysis": lambda df: {
                         "total": len(df),
                         "p1_wins": len(df[((df["Mandante"] == p1) & (df["Mandante FT"] > df["Visitante FT"])) |
                                           ((df["Visitante"] == p1) & (df["Visitante FT"] > df["Mandante FT"]))]),
@@ -1826,109 +1866,59 @@ def fifalgorithm_app():
                         "draws": len(df[df["Mandante FT"] == df["Visitante FT"]])
                     },
                     "threshold": MIN_PORCENTAGEM,
-                    "priority": 1  # Prioridade mais alta
+                    "priority": 1
                 },
-                "Over 1.5 Jogador": {
-                    "col": "Over 1.5 Player",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "p1_hits": len(df[((df["Mandante"] == p1) & (df["Mandante FT"] >= 2)) |
-                                          ((df["Visitante"] == p1) & (df["Visitante FT"] >= 2))]),
-                        "p2_hits": len(df[((df["Mandante"] == p2) & (df["Mandante FT"] >= 2)) |
-                                          ((df["Visitante"] == p2) & (df["Visitante FT"] >= 2))])
-                    },
+                "Over 2.5 Jogador": {
+                    "analysis": lambda df, p: len(df[((df["Mandante"] == p) & (df["Mandante FT"] >= 3)) |
+                                                     ((df["Visitante"] == p) & (df["Visitante FT"] >= 3))]),
                     "threshold": MIN_PORCENTAGEM,
                     "priority": 2
                 },
-                "Over 2.5 Jogador": {
-                    "col": "Over 2.5 Player",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "p1_hits": len(df[((df["Mandante"] == p1) & (df["Mandante FT"] >= 3)) |
-                                          ((df["Visitante"] == p1) & (df["Visitante FT"] >= 3))]),
-                        "p2_hits": len(df[((df["Mandante"] == p2) & (df["Mandante FT"] >= 3)) |
-                                          ((df["Visitante"] == p2) & (df["Visitante FT"] >= 3))])
-                    },
+                "Over 1.5 Jogador": {
+                    "analysis": lambda df, p: len(df[((df["Mandante"] == p) & (df["Mandante FT"] >= 2)) |
+                                                     ((df["Visitante"] == p) & (df["Visitante FT"] >= 2))]),
                     "threshold": MIN_PORCENTAGEM,
-                    "priority": 3
+                    "priority": 3,
+                    "higher_line": "Over 2.5 Jogador"  # Indica que existe uma linha superior
                 },
-                "BTTS HT": {
-                    "col": "BTTS HT",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante HT"] > 0) & (df["Visitante HT"] > 0)])
-                    },
+                "Over 2.5 HT": {
+                    "analysis": lambda df: len(df[df["Total HT"] > 2.5]),
                     "threshold": MIN_PORCENTAGEM,
                     "priority": 4
                 },
-                "Over 2.5 HT": {
-                    "col": "Over 2.5 HT",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante HT"] + df["Visitante HT"]) > 2.5])
-                    },
+                "BTTS HT": {
+                    "analysis": lambda df: len(df[(df["Mandante HT"] > 0) & (df["Visitante HT"] > 0)]),
                     "threshold": MIN_PORCENTAGEM,
                     "priority": 5
                 },
-                "Over 3.5 FT": {
-                    "col": "Over 3.5",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante FT"] + df["Visitante FT"]) > 3.5])
-                    },
+                "Over 1.5 FT": {
+                    "analysis": lambda df: len(df[df["Total FT"] > 1.5]),
                     "threshold": MIN_PORCENTAGEM,
-                    "priority": 6
+                    "priority": 6,
+                    "higher_line": "Over 2.5 FT"
+                },
+                "Over 2.5 FT": {
+                    "analysis": lambda df: len(df[df["Total FT"] > 2.5]),
+                    "threshold": MIN_PORCENTAGEM,
+                    "priority": 7,
+                    "higher_line": "Over 3.5 FT"
+                },
+                "Over 3.5 FT": {
+                    "analysis": lambda df: len(df[df["Total FT"] > 3.5]),
+                    "threshold": MIN_PORCENTAGEM,
+                    "priority": 8,
+                    "higher_line": "Over 4.5 FT"
                 },
                 "Over 4.5 FT": {
-                    "col": "Over 4.5",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante FT"] + df["Visitante FT"]) > 4.5])
-                    },
+                    "analysis": lambda df: len(df[df["Total FT"] > 4.5]),
                     "threshold": MIN_PORCENTAGEM,
-                    "priority": 7
+                    "priority": 9,
+                    "higher_line": "Over 5.5 FT"
                 },
                 "Over 5.5 FT": {
-                    "col": "Over 5.5",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante FT"] + df["Visitante FT"]) > 5.5])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 8
-                },
-                "Under 5.5 FT": {
-                    "col": "Under 5.5",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante FT"] + df["Visitante FT"]) < 5.5])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 9
-                },
-                "Under 2.5 Jogador": {
-                    "col": "Under 2.5 Player",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "p1_hits": len(df[((df["Mandante"] == p1) & (df["Mandante FT"] < 2.5)) |
-                                          ((df["Visitante"] == p1) & (df["Visitante FT"] < 2.5))]),
-                        "p2_hits": len(df[((df["Mandante"] == p2) & (df["Mandante FT"] < 2.5)) |
-                                          ((df["Visitante"] == p2) & (df["Visitante FT"] < 2.5))])
-                    },
+                    "analysis": lambda df: len(df[df["Total FT"] > 5.5]),
                     "threshold": MIN_PORCENTAGEM,
                     "priority": 10
-                },
-                "Under 3.5 Jogador": {
-                    "col": "Under 3.5 Player",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "p1_hits": len(df[((df["Mandante"] == p1) & (df["Mandante FT"] < 3.5)) |
-                                          ((df["Visitante"] == p1) & (df["Visitante FT"] < 3.5))]),
-                        "p2_hits": len(df[((df["Mandante"] == p2) & (df["Mandante FT"] < 3.5)) |
-                                          ((df["Visitante"] == p2) & (df["Visitante FT"] < 3.5))])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 11
                 }
             }
 
@@ -1957,121 +1947,120 @@ def fifalgorithm_app():
 
                 if len(df_historico) >= MIN_JOGOS_CONFRONTO:
                     jogos_com_historico += 1
-
-                    # Dicionário para armazenar todas as oportunidades encontradas para esta partida
+                    total_jogos = len(df_historico)
                     oportunidades_partida = []
 
-                    # Analisar confrontos diretos para cada tipo de aposta
-                    for aposta, config in TIPOS_APOSTA.items():
-                        stats = config["analysis"](df_historico, p1, p2)
-                        threshold = config["threshold"]
-                        priority = config["priority"]
+                    # 1. Análise do Vencedor
+                    stats_vencedor = TIPOS_APOSTA["Vencedor da Partida"]["analysis"](df_historico)
+                    p1_win_rate = (stats_vencedor["p1_wins"] / total_jogos) * 100
+                    p2_win_rate = (stats_vencedor["p2_wins"] / total_jogos) * 100
+                    draw_rate = (stats_vencedor["draws"] / total_jogos) * 100
 
-                        if aposta == "Vencedor da Partida":
-                            p1_win_rate = (stats["p1_wins"] / stats["total"]) * 100 if stats["total"] > 0 else 0
-                            p2_win_rate = (stats["p2_wins"] / stats["total"]) * 100 if stats["total"] > 0 else 0
-                            draw_rate = (stats["draws"] / stats["total"]) * 100 if stats["total"] > 0 else 0
+                    if p1_win_rate >= MIN_PORCENTAGEM:
+                        oportunidades_partida.append({
+                            "priority": 1,
+                            "tipo": f"Vitória {p1}",
+                            "stats": f"{stats_vencedor['p1_wins']}/{total_jogos} ({p1_win_rate:.1f}%)",
+                            "confianca": "🟢 Alta" if p1_win_rate >= 85 else "🟡 Média"
+                        })
 
-                            if p1_win_rate >= threshold:
-                                oportunidades_partida.append({
-                                    "priority": priority,
-                                    "tipo": f"Vitória {p1}",
-                                    "stats": f"VENCEU {stats['p1_wins']} DE {stats['total']} JOGOS ({p1_win_rate:.0f}%)",
-                                    "confianca": "🟢 Alta" if p1_win_rate >= 80 else "🟡 Média"
-                                })
-                            if p2_win_rate >= threshold:
-                                oportunidades_partida.append({
-                                    "priority": priority,
-                                    "tipo": f"Vitória {p2}",
-                                    "stats": f"VENCEU {stats['p2_wins']} DE {stats['total']} JOGOS ({p2_win_rate:.0f}%)",
-                                    "confianca": "🟢 Alta" if p2_win_rate >= 80 else "🟡 Média"
-                                })
-                            if draw_rate >= threshold:
-                                oportunidades_partida.append({
-                                    "priority": priority,
-                                    "tipo": "Empate FT",
-                                    "stats": f"OCORREU {stats['draws']} DE {stats['total']} JOGOS ({draw_rate:.0f}%)",
-                                    "confianca": "🟢 Alta" if draw_rate >= 80 else "🟡 Média"
-                                })
-                        elif "Over" in aposta or "Under" in aposta:
-                            if "Jogador" in aposta:
-                                # Mercados por jogador (Over/Under)
-                                p1_hits = stats["p1_hits"]
-                                p2_hits = stats["p2_hits"]
-                                total = stats["total"]
+                    if p2_win_rate >= MIN_PORCENTAGEM:
+                        oportunidades_partida.append({
+                            "priority": 1,
+                            "tipo": f"Vitória {p2}",
+                            "stats": f"{stats_vencedor['p2_wins']}/{total_jogos} ({p2_win_rate:.1f}%)",
+                            "confianca": "🟢 Alta" if p2_win_rate >= 85 else "🟡 Média"
+                        })
 
-                                p1_rate = (p1_hits / total) * 100 if total > 0 else 0
-                                p2_rate = (p2_hits / total) * 100 if total > 0 else 0
+                    if draw_rate >= MIN_PORCENTAGEM:
+                        oportunidades_partida.append({
+                            "priority": 1,
+                            "tipo": "Empate FT",
+                            "stats": f"{stats_vencedor['draws']}/{total_jogos} ({draw_rate:.1f}%)",
+                            "confianca": "🟢 Alta" if draw_rate >= 85 else "🟡 Média"
+                        })
 
-                                if p1_rate >= threshold:
-                                    oportunidades_partida.append({
-                                        "priority": priority,
-                                        "tipo": f"{aposta} - {p1}",
-                                        "stats": f"ACERTOU {p1_hits} DE {total} JOGOS ({p1_rate:.0f}%)",
-                                        "confianca": "🟢 Alta" if p1_rate >= 80 else "🟡 Média"
-                                    })
-                                if p2_rate >= threshold:
-                                    oportunidades_partida.append({
-                                        "priority": priority,
-                                        "tipo": f"{aposta} - {p2}",
-                                        "stats": f"ACERTOU {p2_hits} DE {total} JOGOS ({p2_rate:.0f}%)",
-                                        "confianca": "🟢 Alta" if p2_rate >= 80 else "🟡 Média"
-                                    })
-                            else:
-                                # Mercados gerais (Over/Under HT/FT)
-                                hits = stats["hits"]
-                                total = stats["total"]
-                                rate = (hits / total) * 100 if total > 0 else 0
+                    # 2. Análise de mercados Over com priorização de linhas mais altas
+                    mercados_over = [k for k in TIPOS_APOSTA.keys() if "Over" in k and "Jogador" not in k]
 
-                                if rate >= threshold:
-                                    oportunidades_partida.append({
-                                        "priority": priority,
-                                        "tipo": aposta,
-                                        "stats": f"OCORREU EM {hits} DE {total} JOGOS ({rate:.0f}%)",
-                                        "confianca": "🟢 Alta" if rate >= 80 else "🟡 Média"
-                                    })
+                    # Ordenar do maior para o menor (linhas mais altas primeiro)
+                    mercados_over.sort(key=lambda x: float(x.split()[1]), reverse=True)
+
+                    for mercado in mercados_over:
+                        config = TIPOS_APOSTA[mercado]
+
+                        # Verificar se existe uma linha superior que já atende o critério
+                        if "higher_line" in config and any(
+                                op["tipo"].startswith(config["higher_line"]) for op in oportunidades_partida):
+                            continue
+
+                        hits = config["analysis"](df_historico)
+                        rate = (hits / total_jogos) * 100
+
+                        if rate >= MIN_PORCENTAGEM:
+                            oportunidades_partida.append({
+                                "priority": config["priority"],
+                                "tipo": mercado,
+                                "stats": f"{hits}/{total_jogos} ({rate:.1f}%)",
+                                "confianca": "🟢 Alta" if rate >= 85 else "🟡 Média"
+                            })
+
+                    # 3. Análise de Over por Jogador (linha mais alta primeiro)
+                    for p in [p1, p2]:
+                        # Verificar Over 2.5 Jogador primeiro (linha mais alta)
+                        hits_25 = TIPOS_APOSTA["Over 2.5 Jogador"]["analysis"](df_historico, p)
+                        rate_25 = (hits_25 / total_jogos) * 100
+
+                        if rate_25 >= MIN_PORCENTAGEM:
+                            oportunidades_partida.append({
+                                "priority": 2,
+                                "tipo": f"Over 2.5 {p}",
+                                "stats": f"{hits_25}/{total_jogos} ({rate_25:.1f}%)",
+                                "confianca": "🟢 Alta" if rate_25 >= 85 else "🟡 Média"
+                            })
                         else:
-                            # Outros mercados (BTTS HT)
-                            hits = stats["hits"]
-                            total = stats["total"]
-                            rate = (hits / total) * 100 if total > 0 else 0
+                            # Se Over 2.5 não atender, verificar Over 1.5
+                            hits_15 = TIPOS_APOSTA["Over 1.5 Jogador"]["analysis"](df_historico, p)
+                            rate_15 = (hits_15 / total_jogos) * 100
 
-                            if rate >= threshold:
+                            if rate_15 >= MIN_PORCENTAGEM:
                                 oportunidades_partida.append({
-                                    "priority": priority,
-                                    "tipo": aposta,
-                                    "stats": f"OCORREU EM {hits} DE {total} JOGOS ({rate:.0f}%)",
-                                    "confianca": "🟢 Alta" if rate >= 80 else "🟡 Média"
+                                    "priority": 3,
+                                    "tipo": f"Over 1.5 {p}",
+                                    "stats": f"{hits_15}/{total_jogos} ({rate_15:.1f}%)",
+                                    "confianca": "🟢 Alta" if rate_15 >= 85 else "🟡 Média"
                                 })
 
-                    # Ordenar oportunidades por prioridade e selecionar até 4 por partida
-                    oportunidades_partida.sort(key=lambda x: x["priority"])
+                    # 4. BTTS HT
+                    hits_btts_ht = TIPOS_APOSTA["BTTS HT"]["analysis"](df_historico)
+                    rate_btts_ht = (hits_btts_ht / total_jogos) * 100
 
-                    # Agrupar por tipo para evitar duplicatas
-                    tipos_unicos = set()
-                    oportunidades_filtradas = []
+                    if rate_btts_ht >= MIN_PORCENTAGEM:
+                        oportunidades_partida.append({
+                            "priority": 5,
+                            "tipo": "BTTS HT",
+                            "stats": f"{hits_btts_ht}/{total_jogos} ({rate_btts_ht:.1f}%)",
+                            "confianca": "🟢 Alta" if rate_btts_ht >= 85 else "🟡 Média"
+                        })
 
-                    for op in oportunidades_partida:
-                        tipo_base = op["tipo"].split(" - ")[0]  # Remove o nome do jogador para comparação
-                        if tipo_base not in tipos_unicos:
-                            tipos_unicos.add(tipo_base)
-                            oportunidades_filtradas.append(op)
-                            if len(oportunidades_filtradas) >= MAX_SUGESTOES_POR_PARTIDA:
-                                break
+                    # Ordenar por prioridade e selecionar as melhores
+                    oportunidades_partida.sort(
+                        key=lambda x: (-x["priority"], -float(x["stats"].split("(")[1].split("%")[0])))
+                    oportunidades_partida = oportunidades_partida[:MAX_SUGESTOES_POR_PARTIDA]
 
                     # Adicionar ao relatório final
-                    for op in oportunidades_filtradas:
+                    for op in oportunidades_partida:
                         relatorios.append({
                             "Hora": hora_jogo,
                             "Liga": liga,
                             "Jogo": f"{p1} x {p2}",
-                            "Tipo Aposta": op["tipo"],
+                            "Sugestão": op["tipo"],
                             "Estatística": op["stats"],
                             "Confiança": op["confianca"],
-                            "Jogos Analisados": len(df_historico)
+                            "Jogos Analisados": total_jogos
                         })
 
-            # Resumo inicial
+            # Exibição dos resultados
             st.markdown(f"""
             ### 🔍 Relatório de Análise (Próximos Jogos)
             - **Hora atual:** {hora_atual}
@@ -2083,33 +2072,30 @@ def fifalgorithm_app():
 
             if relatorios:
                 df_relatorios = pd.DataFrame(relatorios)
-
-                # Ordenar por hora do jogo (do mais próximo para o mais distante)
-                df_relatorios = df_relatorios.sort_values("Hora", ascending=True)
+                df_relatorios = df_relatorios.sort_values(["Hora", "Liga"])
 
                 # Agrupar por jogo com expanders
-                st.subheader("🎯 Melhores Oportunidades nos Próximos Jogos")
+                st.subheader("🎯 Melhores Oportunidades por Partida")
                 for jogo in df_relatorios["Jogo"].unique():
-                    df_jogo = df_relatorios[df_relatorios["Jogo"] == jogo]
+                    df_jogo = df_relatorios[df_relatorios["Jogo"] == jogo].sort_values("Confiança", ascending=False)
                     hora_jogo = df_jogo["Hora"].iloc[0]
                     liga_jogo = df_jogo["Liga"].iloc[0]
+                    total_analisado = df_jogo["Jogos Analisados"].iloc[0]
 
-                    with st.expander(f"⚽ {jogo} | {liga_jogo} | Hora: {hora_jogo} | {len(df_jogo)} oportunidades"):
+                    with st.expander(f"⚽ {jogo} | {liga_jogo} | Hora: {hora_jogo} | {len(df_jogo)} sugestões"):
+                        st.write(f"📊 **Histórico de confrontos diretos analisados:** {total_analisado} jogos")
+
                         for _, row in df_jogo.iterrows():
                             st.success(
-                                f"**{row['Tipo Aposta']}**\n\n"
+                                f"**{row['Sugestão']}**\n\n"
                                 f"- {row['Estatística']}\n"
-                                f"- Confiança: {row['Confiança']}\n"
-                                f"- Jogos analisados: {row['Jogos Analisados']}"
+                                f"- Confiança: {row['Confiança']}"
                             )
 
                 # Tabela detalhada
-                st.subheader("📋 Detalhes de Todas as Oportunidades (Ordenadas por Hora)")
+                st.subheader("📋 Todas as Oportunidades (Ordenadas por Hora)")
                 st.dataframe(
-                    df_relatorios,
-                    column_config={
-                        "Jogos Analisados": st.column_config.NumberColumn(format="%d jogos")
-                    },
+                    df_relatorios[["Hora", "Liga", "Jogo", "Sugestão", "Estatística", "Confiança"]],
                     use_container_width=True,
                     height=600
                 )
@@ -2117,20 +2103,18 @@ def fifalgorithm_app():
                 # Botão para exportar
                 csv = df_relatorios.to_csv(index=False).encode('utf-8')
                 st.download_button(
-                    label="📥 Exportar Relatórios Completos",
+                    label="📥 Exportar Relatório Completo",
                     data=csv,
-                    file_name='relatorios_proximos_jogos.csv',
-                    mime='text/csv',
-                    help="Exporta todas as oportunidades identificadas para um arquivo CSV"
+                    file_name='relatorio_confrontos_diretos.csv',
+                    mime='text/csv'
                 )
             else:
                 st.info("""
-                Nenhuma oportunidade de aposta identificada nos próximos jogos com base nos critérios:
+                Nenhuma oportunidade identificada nos próximos jogos com base nos critérios:
                 - Mínimo de 5 confrontos diretos históricos
-                - Porcentagem de acerto acima de 72% para cada mercado
-                - Máximo de 4 sugestões por partida, evitando repetições de mercados
+                - Porcentagem de acerto acima de 78%
+                - Máximo de 5 sugestões por partida
                 """)
-
 
 # ==============================================
 # FUNÇÕES AUXILIARES PARA ANÁLISE
