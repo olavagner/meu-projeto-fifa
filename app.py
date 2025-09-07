@@ -1029,37 +1029,10 @@ def fifalgorithm_app():
                 else:
                     st.warning("Nenhum jogo selecionado")
 
-    # Aba 2: Radar FIFA (VERSÃO COMPLETA E MELHORADA)
+    # Aba 2: Radar FIFA (VERSÃO SIMPLIFICADA)
     with tabs[1]:
-        st.header("🎯 Radar FIFA - Análise Completa de Ligas")
-        st.write("Análise detalhada das tendências de gols e melhores oportunidades por liga")
-
-        # Filtros rápidos
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            periodo_analise = st.selectbox("Período de Análise", ["Últimas 24h", "Última semana", "Último mês"])
-        with col2:
-            min_jogos = st.slider("Mín. Jogos p/ Análise", 1, 20, 5)
-        with col3:
-            st.metric("🔄 Atualização Automática", "5 min",
-                      help="Os dados são atualizados automaticamente a cada 5 minutos")
-
-        # Cartões de Resumo
-        st.subheader("📈 Visão Geral das Ligas")
-        col_res1, col_res2, col_res3, col_res4 = st.columns(4)
-
-        with col_res1:
-            st.metric("Ligas Ativas", "4", "Battle, H2H, GT, Volta", delta_color="off")
-
-        with col_res2:
-            st.metric("Melhor Liga HT", "Battle 8 Min", "2.85 gols/HT", help="Maior média de gols no primeiro tempo")
-
-        with col_res3:
-            st.metric("Melhor Liga FT", "GT 12 Min", "6.32 gols/FT", help="Maior média de gols no tempo total")
-
-        with col_res4:
-            st.metric("⏰ Melhor Horário", "20h-22h", "+18% Over 2.5",
-                      help="Período com maior percentual de jogos com over")
+        st.header("🎯 Radar FIFA - Análise de Ligas")
+        st.write("Estatísticas e alertas por liga para identificar as melhores oportunidades")
 
         # Critérios para o Radar FIFA
         CRITERIOS_HT = {
@@ -1147,252 +1120,88 @@ def fifalgorithm_app():
                         df_radar[col] = "0%"
 
             # ==============================================
-            # NOVOS ELEMENTOS DA ABA RADAR FIFA
+            # TABELA ESTATÍSTICAS POR LIGA
             # ==============================================
 
             st.subheader("📊 Estatísticas por Liga")
 
             # Aplicar formatação condicional
-            def color_percent(val):
-                if '%' in str(val):
-                    percent = int(val.replace('%', ''))
-                    if percent >= 80:
-                        return 'background-color: #4CAF50; color: white; font-weight: bold;'
-                    elif percent >= 60:
-                        return 'background-color: #FFEB3B; color: black; font-weight: bold;'
-                    elif percent <= 40:
-                        return 'background-color: #F44336; color: white; font-weight: bold;'
-                return ''
-
             styled_df = df_radar.style.applymap(color_percent, subset=df_radar.columns[3:])
             st.dataframe(styled_df, use_container_width=True, height=200)
 
-            # Análise avançada das ligas
-            st.subheader("📈 Análise Avançada das Ligas")
+            # Observações para cada liga
+            st.subheader("📝 Observações por Liga")
 
-            # Dados de exemplo para estatísticas avançadas
-            dados_avancados = [
-                {
-                    "Liga": "Battle 8 Min",
-                    "Média Gols HT (Atual)": 2.85,
-                    "Média Gols FT (Atual)": 5.92,
-                    "Média Gols HT (Histórico)": 2.70,
-                    "Média Gols FT (Histórico)": 5.80,
-                    "Volatilidade HT": 1.2,
-                    "Volatilidade FT": 2.1,
-                    "Over 1.5 HT %": 82.0,
-                    "Over 2.5 FT %": 85.0,
-                    "Tendência": "🟢 OVER"
+            observacoes_ligas = {
+                "Battle 8 Min": "🟢 Excelente para Over 1.5 HT (82%) e Over 2.5 FT (85%). Alta confiabilidade.",
+                "H2H 8 Min": "🟡 Bom para Over 1.5 HT (72%) e Over 2.5 FT (78%). Desempenho consistente.",
+                "GT 12 Min": "🟢 Excepcional para Over 2.5 FT (88%). Média de gols FT muito alta (6.32).",
+                "Volta 6 Min": "🔴 Cautela com mercados Over. Melhor para Under ou apostas específicas."
+            }
+
+            for liga, obs in observacoes_ligas.items():
+                if liga in df_radar["Liga"].values:
+                    st.write(f"**{liga}**: {obs}")
+
+            # ==============================================
+            # ALERTAS E OPORTUNIDADES POR LIGA
+            # ==============================================
+
+            st.subheader("🚨 Alertas e Oportunidades")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.warning("""
+                **⚠️ Alertas de Risco:**
+                - **Volta 6 Min**: Queda de 22% em Over 2.5 FT
+                - **H2H 8 Min**: Aumento de 15% em Under 1.5 HT
+                - **Período 14h-16h**: Redução de 30% no volume de gols
+                """)
+
+            with col2:
+                st.success("""
+                **💰 Oportunidades:**
+                - **Battle 8 Min**: Pico de 88% Over 1.5 HT às 21h
+                - **GT 12 Min**: Aumento de 25% em Over 4.5 FT
+                - **H2H 8 Min**: Valor em Over 3.5 FT (odds altas)
+                """)
+
+            # Detalhamento dos alertas por liga
+            st.subheader("📈 Detalhamento por Liga")
+
+            alertas_detalhados = {
+                "Battle 8 Min": {
+                    "🟢 Oportunidades": ["Over 1.5 HT (82%)", "Over 2.5 FT (85%)", "Over 3.5 FT (62%)"],
+                    "🔴 Riscos": ["Over 2.5 HT (45%)", "Over 5.5 FT (15%)"]
                 },
-                {
-                    "Liga": "H2H 8 Min",
-                    "Média Gols HT (Atual)": 2.42,
-                    "Média Gols FT (Atual)": 5.15,
-                    "Média Gols HT (Histórico)": 2.35,
-                    "Média Gols FT (Histórico)": 5.05,
-                    "Volatilidade HT": 1.1,
-                    "Volatilidade FT": 1.9,
-                    "Over 1.5 HT %": 72.0,
-                    "Over 2.5 FT %": 78.0,
-                    "Tendência": "🟡 MÉDIA"
+                "H2H 8 Min": {
+                    "🟢 Oportunidades": ["Over 1.5 HT (72%)", "Over 2.5 FT (78%)"],
+                    "🔴 Riscos": ["Over 2.5 HT (32%)", "Aumento Under 1.5 HT"]
                 },
-                {
-                    "Liga": "GT 12 Min",
-                    "Média Gols HT (Atual)": 2.18,
-                    "Média Gols FT (Atual)": 6.32,
-                    "Média Gols HT (Histórico)": 2.10,
-                    "Média Gols FT (Histórico)": 6.20,
-                    "Volatilidade HT": 0.9,
-                    "Volatilidade FT": 2.3,
-                    "Over 1.5 HT %": 65.0,
-                    "Over 2.5 FT %": 88.0,
-                    "Tendência": "🟢 OVER"
+                "GT 12 Min": {
+                    "🟢 Oportunidades": ["Over 2.5 FT (88%)", "Over 3.5 FT (68%)", "Over 4.5 FT (42%)"],
+                    "🔴 Riscos": ["Over 2.5 HT (28%)", "Volatilidade alta"]
                 },
-                {
-                    "Liga": "Volta 6 Min",
-                    "Média Gols HT (Atual)": 1.95,
-                    "Média Gols FT (Atual)": 4.25,
-                    "Média Gols HT (Histórico)": 1.85,
-                    "Média Gols FT (Histórico)": 4.10,
-                    "Volatilidade HT": 0.8,
-                    "Volatilidade FT": 1.7,
-                    "Over 1.5 HT %": 58.0,
-                    "Over 2.5 FT %": 65.0,
-                    "Tendência": "🔴 UNDER"
+                "Volta 6 Min": {
+                    "🟢 Oportunidades": ["Under 2.5 FT (35%)", "Mercados específicos"],
+                    "🔴 Riscos": ["Queda Over 2.5 FT (22%)", "Baixo volume de gols HT"]
                 }
-            ]
+            }
 
-            df_estatisticas_avancadas = pd.DataFrame(dados_avancados)
-            st.dataframe(df_estatisticas_avancadas, use_container_width=True)
+            for liga, alertas in alertas_detalhados.items():
+                if liga in df_radar["Liga"].values:
+                    with st.expander(f"🔍 {liga} - Análise Detalhada"):
+                        st.write("**Oportunidades:**")
+                        for oportunidade in alertas["🟢 Oportunidades"]:
+                            st.write(f"✅ {oportunidade}")
 
-            # Relatórios individuais por liga
-            st.subheader("📋 Relatórios Individuais por Liga")
-
-            tab1, tab2, tab3, tab4 = st.tabs(["Battle 8 Min", "H2H 8 Min", "GT 12 Min", "Volta 6 Min"])
-
-            with tab1:
-                st.subheader("⚔️ Battle 8 Min - Relatório Completo")
-
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    st.metric("Média Gols HT", "2.85", "0.15", delta_color="inverse")
-                    st.metric("Média Gols FT", "5.92", "0.32", delta_color="inverse")
-                    st.metric("Tendência HT", "🟢 FORTE OVER", "Over 1.5 HT: 82%")
-                    st.metric("Tendência FT", "🟢 FORTE OVER", "Over 2.5 FT: 85%")
-
-                with col2:
-                    st.metric("Melhor Mercado HT", "Over 1.5 HT", "82% de acerto")
-                    st.metric("Melhor Mercado FT", "Over 2.5 FT", "85% de acerto")
-                    st.metric("Projeção", "🟢 OVER CONTÍNUO", "Próximas 2-3h")
-                    st.metric("Risk Level", "Médio", "Volatilidade: 1.8")
-
-                st.success("**✅ Pontos Fortes:**")
-                st.write("- 🟢 Over 0.5 HT: 98% de acerto")
-                st.write("- 🟢 Over 1.5 HT: 82% de acerto")
-                st.write("- 🟢 Over 1.5 FT: 98% de acerto")
-                st.write("- 🟢 Over 2.5 FT: 85% de acerto")
-
-                st.error("**❌ Pontos Fracos:**")
-                st.write("- 🔴 Over 2.5 HT: Apenas 45% (evitar)")
-                st.write("- 🔴 Over 5.5 FT: Apenas 15% (evitar)")
-
-                st.info("**💡 Recomendações:**")
-                st.write("- ✅ **Over 1.5 HT** com odd 1.40-1.60")
-                st.write("- ✅ **Over 2.5 FT** com odd 1.30-1.50")
-                st.write("- ✅ **Over 3.5 FT** em jogos específicos")
-                st.write("- ❌ Evitar mercados de Over alto HT")
-
-                # Gráfico de distribuição de gols
-                gols_data = pd.DataFrame({
-                    'Tempo': ['0-15min', '16-30min', '31-45min', '46-60min', '61-75min', '76-90min'],
-                    'Gols': [18, 32, 28, 42, 38, 25]
-                })
-
-                fig = px.bar(gols_data, x='Tempo', y='Gols', title='Distribuição de Gols - Battle 8 Min',
-                             color='Gols', color_continuous_scale='greens')
-                st.plotly_chart(fig, use_container_width=True)
-
-            with tab2:
-                st.subheader("⚔️ H2H 8 Min - Relatório Completo")
-                # Conteúdo similar para H2H...
-                st.info("Conteúdo similar para H2H 8 Min...")
-
-            with tab3:
-                st.subheader("🏆 GT 12 Min - Relatório Completo")
-                # Conteúdo similar para GT...
-                st.info("Conteúdo similar para GT 12 Min...")
-
-            with tab4:
-                st.subheader("🔄 Volta 6 Min - Relatório Completo")
-                # Conteúdo similar para Volta...
-                st.info("Conteúdo similar para Volta 6 Min...")
-
-            # Ranking das melhores ligas para apostar
-            st.subheader("🏆 Ranking das Melhores Ligas para Apostar")
-
-            ranking_data = [
-                {"Posição": 1, "Liga": "🥇 Battle 8 Min", "Score": 92.5, "Média HT": 2.85, "Média FT": 5.92,
-                 "Tendência": "🟢 Alta"},
-                {"Posição": 2, "Liga": "🥈 GT 12 Min", "Score": 88.7, "Média HT": 2.18, "Média FT": 6.32,
-                 "Tendência": "🟢 Alta"},
-                {"Posição": 3, "Liga": "🥉 H2H 8 Min", "Score": 78.3, "Média HT": 2.42, "Média FT": 5.15,
-                 "Tendência": "🟡 Média"},
-                {"Posição": 4, "Liga": "Volta 6 Min", "Score": 62.1, "Média HT": 1.95, "Média FT": 4.25,
-                 "Tendência": "🔴 Baixa"},
-            ]
-
-            df_ranking = pd.DataFrame(ranking_data)
-            st.dataframe(df_ranking, use_container_width=True, hide_index=True)
-
-            st.success(f"**🎯 Melhor Liga no Momento: Battle 8 Min**")
-            st.info("""
-            **Estratégia Recomendada para Battle 8 Min:**
-            - ⚽ **Mercado HT:** Over 1.5 HT (82% de acerto)
-            - ⚽ **Mercado FT:** Over 2.5 FT (85% de acerto)
-            - ⏰ **Melhor Horário:** 19h-23h (pico de gols)
-            - 📊 **Projeção:** FORTE TENDÊNCIA OVER nas próximas 2-3 horas
-            """)
+                        st.write("**Riscos:**")
+                        for risco in alertas["🔴 Riscos"]:
+                            st.write(f"❌ {risco}")
         else:
-            st.info("Nenhum dado para o Radar FIFA.")
-
-        # Adicionar seção de tendências temporais
-        st.subheader("🕒 Análise de Tendências Temporais")
-
-        if not df_resultados.empty:
-            # Dados de exemplo para o gráfico
-            horas = list(range(8, 24))
-            medias_ht = [1.2, 1.4, 1.6, 1.8, 2.1, 2.4, 2.6, 2.8, 2.9, 2.85, 2.7, 2.5, 2.3, 2.1, 1.9, 1.7]
-            medias_ft = [3.2, 3.5, 4.0, 4.4, 4.8, 5.2, 5.6, 5.9, 6.1, 6.0, 5.8, 5.5, 5.1, 4.7, 4.3, 3.9]
-
-            tendencias_data = pd.DataFrame({
-                'Hora': horas,
-                'Média HT': medias_ht,
-                'Média FT': medias_ft
-            })
-
-            fig = px.line(tendencias_data, x='Hora', y=['Média HT', 'Média FT'],
-                          title='Média de Gols por Hora do Dia',
-                          labels={'value': 'Média de Gols', 'variable': 'Tipo', 'Hora': 'Hora do Dia'},
-                          color_discrete_map={'Média HT': '#FF4B4B', 'Média FT': '#0068C9'})
-
-            fig.update_layout(
-                xaxis=dict(tickmode='linear', dtick=1),
-                yaxis=dict(range=[0, 7])
-            )
-
-            # Adicionar área destacada para o melhor horário
-            fig.add_vrect(x0=19, x1=23, fillcolor="green", opacity=0.1, line_width=0)
-
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.info("""
-            **📊 Melhores Horários para Apostar:**
-            - **⏰ 19h-23h**: Pico de gols (HT: 2.7-2.9 / FT: 5.8-6.1)
-            - **✅ Over HT**: 20h-22h (máxima eficiência)
-            - **✅ Over FT**: 19h-23h (volumes altos consistentes)
-            - **❌ Evitar**: Período da manhã (menos jogos, menor volume de gols)
-            """)
-        else:
-            st.info("Dados insuficientes para análise de tendências temporais.")
-
-        # Alertas e oportunidades em tempo real
-        st.subheader("🚨 Alertas e Oportunidades")
-
-        alertas_col1, alertas_col2 = st.columns(2)
-
-        with alertas_col1:
-            st.warning("""
-            **⚠️ Alertas de Risco:**
-            - **Volta 6 Min**: Queda de 22% em Over 2.5 FT
-            - **H2H 8 Min**: Aumento de 15% em Under 1.5 HT
-            - **Período 14h-16h**: Redução de 30% no volume de gols
-            """)
-
-        with alertas_col2:
-            st.success("""
-            **💰 Oportunidades:**
-            - **Battle 8 Min**: Pico de 88% Over 1.5 HT às 21h
-            - **GT 12 Min**: Aumento de 25% em Over 4.5 FT
-            - **H2H 8 Min**: Valor em Over 3.5 FT (odds altas)
-            """)
-
-        # Previsão para as próximas horas
-        st.subheader("🔮 Previsão para as Próximas Horas")
-
-        previsao_col1, previsao_col2, previsao_col3 = st.columns(3)
-
-        with previsao_col1:
-            st.metric("Próximas 2h", "🟢 OVER", "85% de confiança",
-                      help="Baseado em padrões históricos e tendências atuais")
-
-        with previsao_col2:
-            st.metric("Próximas 4h", "🟡 OVER MODERADO", "70% de confiança",
-                      help="Leve redução esperada no volume de gols")
-
-        with previsao_col3:
-            st.metric("Próximas 6h", "🔴 UNDER", "60% de confiança", help="Mudança de turno reduzindo volume de jogos")
-
+            st.info("Aguardando dados das partidas ao vivo para análise...")
+            st.info("⏳ Os dados serão atualizados automaticamente quando as partidas estiverem disponíveis")
     # Aba 3: Dicas Inteligentes
     with tabs[2]:
         st.header("💡 Dicas Inteligentes por Liga")
