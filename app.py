@@ -1129,19 +1129,68 @@ def fifalgorithm_app():
             styled_df = df_radar.style.applymap(color_percent, subset=df_radar.columns[3:])
             st.dataframe(styled_df, use_container_width=True, height=200)
 
-            # Observações para cada liga
+            # Observações dinâmicas baseadas nos dados reais
             st.subheader("📝 Observações por Liga")
 
-            observacoes_ligas = {
-                "Battle 8 Min": "🟢 Excelente para Over 1.5 HT (82%) e Over 2.5 FT (85%). Alta confiabilidade.",
-                "H2H 8 Min": "🟡 Bom para Over 1.5 HT (72%) e Over 2.5 FT (78%). Desempenho consistente.",
-                "GT 12 Min": "🟢 Excepcional para Over 2.5 FT (88%). Média de gols FT muito alta (6.32).",
-                "Volta 6 Min": "🔴 Cautela com mercados Over. Melhor para Under ou apostas específicas."
-            }
+            def gerar_observacao_liga(liga, dados_liga):
+                """Gera observações dinâmicas baseadas nos dados da liga"""
 
-            for liga, obs in observacoes_ligas.items():
-                if liga in df_radar["Liga"].values:
-                    st.write(f"**{liga}**: {obs}")
+                try:
+                    media_ht = float(dados_liga["Média Gols HT"])
+                    media_ft = float(dados_liga["Média Gols FT"])
+                    over_15_ht = int(dados_liga["1.5 HT"].replace("%", ""))
+                    over_25_ft = int(dados_liga["2.5 FT"].replace("%", ""))
+
+                    observacoes = []
+
+                    # Análise de Média de Gols HT
+                    if media_ht >= 2.8:
+                        observacoes.append(f"🟢 Média de gols HT muito alta ({media_ht})")
+                    elif media_ht >= 2.4:
+                        observacoes.append(f"🟡 Média de gols HT boa ({media_ht})")
+                    elif media_ht <= 1.8:
+                        observacoes.append(f"🔴 Média de gols HT baixa ({media_ht})")
+
+                    # Análise de Média de Gols FT
+                    if media_ft >= 6.0:
+                        observacoes.append(f"🟢 Média de gols FT excepcional ({media_ft})")
+                    elif media_ft >= 5.0:
+                        observacoes.append(f"🟡 Média de gols FT boa ({media_ft})")
+                    elif media_ft <= 3.5:
+                        observacoes.append(f"🔴 Média de gols FT baixa ({media_ft})")
+
+                    # Análise de Over 1.5 HT
+                    if over_15_ht >= 80:
+                        observacoes.append(f"🟢 Excelente para Over 1.5 HT ({over_15_ht}%)")
+                    elif over_15_ht >= 70:
+                        observacoes.append(f"🟡 Bom para Over 1.5 HT ({over_15_ht}%)")
+                    elif over_15_ht <= 50:
+                        observacoes.append(f"🔴 Fraco para Over 1.5 HT ({over_15_ht}%)")
+
+                    # Análise de Over 2.5 FT
+                    if over_25_ft >= 85:
+                        observacoes.append(f"🟢 Excepcional para Over 2.5 FT ({over_25_ft}%)")
+                    elif over_25_ft >= 75:
+                        observacoes.append(f"🟡 Bom para Over 2.5 FT ({over_25_ft}%)")
+                    elif over_25_ft <= 55:
+                        observacoes.append(f"🔴 Cautela com Over 2.5 FT ({over_25_ft}%)")
+
+                    # Tendência de gols (HT vs FT)
+                    if media_ht > media_ft / 2:
+                        observacoes.append("📈 Maior concentração de gols no 1º tempo")
+                    else:
+                        observacoes.append("📉 Maior concentração de gols no 2º tempo")
+
+                    return " | ".join(observacoes)
+
+                except:
+                    return "⚠️ Dados insuficientes para análise"
+
+            # Gerar observações dinâmicas
+            for liga in df_radar["Liga"].unique():
+                dados_liga = df_radar[df_radar["Liga"] == liga].iloc[0]
+                observacao = gerar_observacao_liga(liga, dados_liga)
+                st.write(f"**{liga}**: {observacao}")
 
             # ==============================================
             # ALERTAS E OPORTUNIDADES POR LIGA
