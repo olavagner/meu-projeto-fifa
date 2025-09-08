@@ -1029,10 +1029,13 @@ def fifalgorithm_app():
                 else:
                     st.warning("Nenhum jogo selecionado")
 
-    # Aba 2: Radar FIFA (VERSÃO SIMPLIFICADA)
+    # ==============================================
+    # ABA 2: RADAR FIFA - ATUALIZADO
+    # ==============================================
+
     with tabs[1]:
         st.header("🎯 Radar FIFA - Análise de Ligas")
-        st.write("Estatísticas e alertas por liga para identificar as melhores oportunidades")
+        st.write("Identifica as melhores oportunidades de apostas por liga com base em estatísticas históricas")
 
         # Critérios para o Radar FIFA
         CRITERIOS_HT = {
@@ -1126,131 +1129,154 @@ def fifalgorithm_app():
             st.subheader("📊 Estatísticas por Liga")
 
             # Aplicar formatação condicional
-            styled_df = df_radar.style.applymap(color_percent, subset=df_radar.columns[3:])
+            styled_df = df_radar.style.map(color_percent, subset=df_radar.columns[3:])
             st.dataframe(styled_df, use_container_width=True, height=200)
 
-            # Observações dinâmicas baseadas nos dados reais
-            st.subheader("📝 Observações por Liga")
+            # ==============================================
+            # OBSERVAÇÕES POR LIGA - MELHORES OPORTUNIDADES (FORMATO TABELA)
+            # ==============================================
 
-            def gerar_observacao_liga(liga, dados_liga):
-                """Gera observações dinâmicas baseadas nos dados da liga"""
+            st.subheader("🎯 Linhas Maximas de Segurança HT & FT")
 
-                try:
-                    media_ht = float(dados_liga["Média Gols HT"])
-                    media_ft = float(dados_liga["Média Gols FT"])
-                    over_15_ht = int(dados_liga["1.5 HT"].replace("%", ""))
-                    over_25_ft = int(dados_liga["2.5 FT"].replace("%", ""))
+            # Mercados a serem analisados
+            mercados_analise = [
+                "0.5 HT", "1.5 HT", "2.5 HT",
+                "0.5 FT", "1.5 FT", "2.5 FT", "3.5 FT", "4.5 FT", "5.5 FT"
+            ]
 
-                    observacoes = []
+            # Criar dados para a tabela
+            tabela_oportunidades = []
 
-                    # Análise de Média de Gols HT
-                    if media_ht >= 2.8:
-                        observacoes.append(f"🟢 Média de gols HT muito alta ({media_ht})")
-                    elif media_ht >= 2.4:
-                        observacoes.append(f"🟡 Média de gols HT boa ({media_ht})")
-                    elif media_ht <= 1.8:
-                        observacoes.append(f"🔴 Média de gols HT baixa ({media_ht})")
-
-                    # Análise de Média de Gols FT
-                    if media_ft >= 6.0:
-                        observacoes.append(f"🟢 Média de gols FT excepcional ({media_ft})")
-                    elif media_ft >= 5.0:
-                        observacoes.append(f"🟡 Média de gols FT boa ({media_ft})")
-                    elif media_ft <= 3.5:
-                        observacoes.append(f"🔴 Média de gols FT baixa ({media_ft})")
-
-                    # Análise de Over 1.5 HT
-                    if over_15_ht >= 80:
-                        observacoes.append(f"🟢 Excelente para Over 1.5 HT ({over_15_ht}%)")
-                    elif over_15_ht >= 70:
-                        observacoes.append(f"🟡 Bom para Over 1.5 HT ({over_15_ht}%)")
-                    elif over_15_ht <= 50:
-                        observacoes.append(f"🔴 Fraco para Over 1.5 HT ({over_15_ht}%)")
-
-                    # Análise de Over 2.5 FT
-                    if over_25_ft >= 85:
-                        observacoes.append(f"🟢 Excepcional para Over 2.5 FT ({over_25_ft}%)")
-                    elif over_25_ft >= 75:
-                        observacoes.append(f"🟡 Bom para Over 2.5 FT ({over_25_ft}%)")
-                    elif over_25_ft <= 55:
-                        observacoes.append(f"🔴 Cautela com Over 2.5 FT ({over_25_ft}%)")
-
-                    # Tendência de gols (HT vs FT)
-                    if media_ht > media_ft / 2:
-                        observacoes.append("📈 Maior concentração de gols no 1º tempo")
-                    else:
-                        observacoes.append("📉 Maior concentração de gols no 2º tempo")
-
-                    return " | ".join(observacoes)
-
-                except:
-                    return "⚠️ Dados insuficientes para análise"
-
-            # Gerar observações dinâmicas
             for liga in df_radar["Liga"].unique():
                 dados_liga = df_radar[df_radar["Liga"] == liga].iloc[0]
-                observacao = gerar_observacao_liga(liga, dados_liga)
-                st.write(f"**{liga}**: {observacao}")
 
-            # ==============================================
-            # ALERTAS E OPORTUNIDADES POR LIGA
-            # ==============================================
+                # Encontrar linha máxima segura para HT
+                linha_max_ht = "Nenhuma"
+                for mercado in ["2.5 HT", "1.5 HT", "0.5 HT"]:
+                    if mercado in dados_liga:
+                        try:
+                            percentual = int(dados_liga[mercado].replace('%', ''))
+                            if percentual >= 80:
+                                linha_max_ht = f"⭐️ {mercado} ({percentual}%)"
+                                break
+                            elif 70 <= percentual <= 79:
+                                linha_max_ht = f"⚠️ {mercado} ({percentual}%)"
+                                break
+                            elif 60 <= percentual <= 69:
+                                linha_max_ht = f"🚧 {mercado} ({percentual}%)"
+                                break
+                        except:
+                            continue
 
-            st.subheader("🚨 Alertas e Oportunidades")
+                # Encontrar linha máxima segura para FT
+                linha_max_ft = "Nenhuma"
+                for mercado in ["5.5 FT", "4.5 FT", "3.5 FT", "2.5 FT", "1.5 FT", "0.5 FT"]:
+                    if mercado in dados_liga:
+                        try:
+                            percentual = int(dados_liga[mercado].replace('%', ''))
+                            if percentual >= 80:
+                                linha_max_ft = f"⭐️ {mercado} ({percentual}%)"
+                                break
+                            elif 70 <= percentual <= 79:
+                                linha_max_ft = f"⚠️ {mercado} ({percentual}%)"
+                                break
+                            elif 60 <= percentual <= 69:
+                                linha_max_ft = f"🚧 {mercado} ({percentual}%)"
+                                break
+                        except:
+                            continue
 
-            col1, col2 = st.columns(2)
+                # Adicionar à tabela
+                tabela_oportunidades.append({
+                    "Liga": f"🎮 {liga}",
+                    "Linha Maxima HT": linha_max_ht,
+                    "Linha Maxima FT": linha_max_ft,
+                    "Média Gols HT": dados_liga.get("Média Gols HT", "0.00"),
+                    "Média Gols FT": dados_liga.get("Média Gols FT", "0.00")
+                })
 
-            with col1:
-                st.warning("""
-                **⚠️ Alertas de Risco:**
-                - **Volta 6 Min**: Queda de 22% em Over 2.5 FT
-                - **H2H 8 Min**: Aumento de 15% em Under 1.5 HT
-                - **Período 14h-16h**: Redução de 30% no volume de gols
-                """)
+            # Criar DataFrame e exibir tabela
+            if tabela_oportunidades:
+                df_oportunidades = pd.DataFrame(tabela_oportunidades)
 
-            with col2:
-                st.success("""
-                **💰 Oportunidades:**
-                - **Battle 8 Min**: Pico de 88% Over 1.5 HT às 21h
-                - **GT 12 Min**: Aumento de 25% em Over 4.5 FT
-                - **H2H 8 Min**: Valor em Over 3.5 FT (odds altas)
-                """)
+                # Aplicar formatação condicional
+                def color_recommendation(val):
+                    if "⭐️" in str(val):
+                        return 'background-color: #4CAF50; color: white; font-weight: bold;'
+                    elif "⚠️" in str(val):
+                        return 'background-color: #FFEB3B; color: black; font-weight: bold;'
+                    elif "🚧" in str(val):
+                        return 'background-color: #FF9800; color: white; font-weight: bold;'
+                    elif "Nenhuma" in str(val):
+                        return 'background-color: #F44336; color: white; font-weight: bold;'
+                    return ''
 
-            # Detalhamento dos alertas por liga
-            st.subheader("📈 Detalhamento por Liga")
+                styled_table = df_oportunidades.style.map(
+                    color_recommendation,
+                    subset=["Linha Maxima HT", "Linha Maxima FT"]
+                )
 
-            alertas_detalhados = {
-                "Battle 8 Min": {
-                    "🟢 Oportunidades": ["Over 1.5 HT (82%)", "Over 2.5 FT (85%)", "Over 3.5 FT (62%)"],
-                    "🔴 Riscos": ["Over 2.5 HT (45%)", "Over 5.5 FT (15%)"]
-                },
-                "H2H 8 Min": {
-                    "🟢 Oportunidades": ["Over 1.5 HT (72%)", "Over 2.5 FT (78%)"],
-                    "🔴 Riscos": ["Over 2.5 HT (32%)", "Aumento Under 1.5 HT"]
-                },
-                "GT 12 Min": {
-                    "🟢 Oportunidades": ["Over 2.5 FT (88%)", "Over 3.5 FT (68%)", "Over 4.5 FT (42%)"],
-                    "🔴 Riscos": ["Over 2.5 HT (28%)", "Volatilidade alta"]
-                },
-                "Volta 6 Min": {
-                    "🟢 Oportunidades": ["Under 2.5 FT (35%)", "Mercados específicos"],
-                    "🔴 Riscos": ["Queda Over 2.5 FT (22%)", "Baixo volume de gols HT"]
-                }
-            }
+                st.dataframe(styled_table, use_container_width=True, height=200)
 
-            for liga, alertas in alertas_detalhados.items():
-                if liga in df_radar["Liga"].values:
-                    with st.expander(f"🔍 {liga} - Análise Detalhada"):
-                        st.write("**Oportunidades:**")
-                        for oportunidade in alertas["🟢 Oportunidades"]:
-                            st.write(f"✅ {oportunidade}")
+                # Legenda
+                st.markdown("""
+                    **📊 Legenda:**
+                    - 🔥 **Linha Máxima Segura** (≥80% de acerto)
+                    - ⚠️ **Cautela** (70-79% de acerto)
+                    - ❓ **Cuidado** (60-69% de acerto)
+                    - ❌ **Evitar** (<60% de acerto ou dados insuficientes)
+                    """)
+            else:
+                st.info("📊 Dados insuficientes para gerar recomendações")
 
-                        st.write("**Riscos:**")
-                        for risco in alertas["🔴 Riscos"]:
-                            st.write(f"❌ {risco}")
+            # Adicionar análise detalhada em expanders
+            st.subheader("📈 Análise Detalhada por Liga")
+
+            for liga in df_radar["Liga"].unique():
+                dados_liga = df_radar[df_radar["Liga"] == liga].iloc[0]
+
+                with st.expander(f"🔍 {liga} - Estatísticas Completas"):
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.markdown("**📊 Estatísticas HT:**")
+                        for mercado in ["0.5 HT", "1.5 HT", "2.5 HT"]:
+                            if mercado in dados_liga:
+                                st.write(f"- {mercado}: {dados_liga[mercado]}")
+
+                    with col2:
+                        st.markdown("**📊 Estatísticas FT:**")
+                        for mercado in ["0.5 FT", "1.5 FT", "2.5 FT", "3.5 FT", "4.5 FT", "5.5 FT"]:
+                            if mercado in dados_liga:
+                                st.write(f"- {mercado}: {dados_liga[mercado]}")
+
+                    # Análise adicional
+                    st.markdown("**🎯 Insights:**")
+                    try:
+                        media_ht = float(dados_liga["Média Gols HT"])
+                        media_ft = float(dados_liga["Média Gols FT"])
+
+                        if media_ht >= 2.5:
+                            st.success("✅ Alta probabilidade de gols no primeiro tempo")
+                        elif media_ht >= 2.0:
+                            st.info("ℹ️ Boa chance de gols no primeiro tempo")
+                        else:
+                            st.warning("⚠️ Baixa expectativa de gols no primeiro tempo")
+
+                        if media_ft >= 5.0:
+                            st.success("✅ Alta probabilidade de muitos gols no jogo completo")
+                        elif media_ft >= 4.0:
+                            st.info("ℹ️ Boa chance de gols no jogo completo")
+                        else:
+                            st.warning("⚠️ Expectativa moderada de gols no jogo completo")
+
+                    except:
+                        st.info("📊 Dados insuficientes para análise adicional")
+
         else:
             st.info("Aguardando dados das partidas ao vivo para análise...")
             st.info("⏳ Os dados serão atualizados automaticamente quando as partidas estiverem disponíveis")
+
     # Aba 3: Dicas Inteligentes
     with tabs[2]:
         st.header("💡 Dicas Inteligentes por Liga")
