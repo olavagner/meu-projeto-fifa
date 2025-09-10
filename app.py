@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 import streamlit as st
 from datetime import datetime, timedelta
@@ -24,9 +23,117 @@ import base64
 import threading
 
 # ==============================================
+# CONFIGURAÇÕES PARA EVITAR ERROS DE CACHE
+# ==============================================
+# ==============================================
+# CONFIGURAÇÕES PARA EVITAR ERROS DE CACHE
+# ==============================================
+# Removidas as opções depreciadas - não existem mais nas versões recentes
+
+# Limpeza de cache forçada ao iniciar
+try:
+    # Método mais recente para limpar cache
+    if hasattr(st, 'cache_data'):
+        st.cache_data.clear()
+    if hasattr(st, 'cache_resource'):
+        st.cache_resource.clear()
+
+    # Método antigo (para versões anteriores)
+    if hasattr(st, 'caching'):
+        st.caching.clear_cache()
+except Exception as e:
+    print(f"Erro ao limpar cache: {e}")
+
+# Limpar arquivos temporários do Streamlit
+try:
+    import tempfile
+    import shutil
+
+    temp_dir = tempfile.gettempdir()
+    for item in os.listdir(temp_dir):
+        if item.startswith('streamlit-') or item.startswith('st-'):
+            item_path = os.path.join(temp_dir, item)
+            try:
+                if os.path.isfile(item_path):
+                    os.unlink(item_path)
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+            except:
+                pass
+except Exception as e:
+    print(f"Erro ao limpar arquivos temporários: {e}")
+
+
+# Função para limpeza periódica (opcional)
+@st.cache_resource
+def clear_cache_periodically():
+    import time
+    if 'last_cache_clear' not in st.session_state:
+        st.session_state.last_cache_clear = time.time()
+
+    current_time = time.time()
+    if current_time - st.session_state.last_cache_clear > 3600:  # Limpa a cada 1 hora
+        try:
+            if hasattr(st, 'cache_data'):
+                st.cache_data.clear()
+            if hasattr(st, 'cache_resource'):
+                st.cache_resource.clear()
+            st.session_state.last_cache_clear = current_time
+        except:
+            pass
+
+
+# Executar a limpeza de cache periódica
+clear_cache_periodically()
+
+
+# Limpar cache periodicamente para evitar erros
+@st.cache_resource
+def clear_cache_periodically():
+    import time
+    if 'last_cache_clear' not in st.session_state:
+        st.session_state.last_cache_clear = time.time()
+
+    current_time = time.time()
+    if current_time - st.session_state.last_cache_clear > 3600:  # Limpa a cada 1 hora
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.session_state.last_cache_clear = current_time
+
+
+# Executar a limpeza de cache
+clear_cache_periodically()
+
+# Limpeza de cache forçada
+try:
+    st.cache_data.clear()
+    st.cache_resource.clear()
+except:
+    pass
+
+# Também tente limpar qualquer arquivo temporário
+import tempfile
+import shutil
+
+try:
+    temp_dir = tempfile.gettempdir()
+    for item in os.listdir(temp_dir):
+        if item.startswith('streamlit-') or item.startswith('st-'):
+            item_path = os.path.join(temp_dir, item)
+            try:
+                if os.path.isfile(item_path):
+                    os.unlink(item_path)
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+            except:
+                pass
+except:
+    pass
+
+
+# ==============================================
 # FUNÇÕES AUXILIARES PARA FORMATAÇÃO
 # ==============================================
-
 def color_percent(val):
     """Aplica formatação condicional a valores percentuais"""
     if '%' in str(val):
@@ -41,6 +148,7 @@ def color_percent(val):
         except:
             return ''
     return ''
+
 
 # ==============================================
 # CONFIGURAÇÕES INICIAIS
@@ -1677,13 +1785,14 @@ def fifalgorithm_app():
                 st.warning("Por favor, selecione ambos os jogadores.")
 
     # Aba 6: Ganhos & Perdas
+    # Aba 6: Ganhos & Perdas
     with tabs[5]:
-        st.header("💰 Análise Comparativa de Jogadores")
-        st.write("Compare o desempenho financeiro de até 6 jogadores simultaneamente")
+        st.header("💰 Análise Individual de Jogadores")
+        st.write("Analise o desempenho financeiro detalhado de cada jogador")
 
-        if not df_stats_all_players.empty:
+        if not df_stats_all_players.empty and not df_resultados.empty:
             # ==============================================
-            # SELEÇÃO MULTIPLA DE JOGADORES E CONFIGURAÇÕES
+            # SELEÇÃO DE JOGADORES E CONFIGURAÇÕES
             # ==============================================
             col1, col2, col3 = st.columns([2, 1, 1])
 
@@ -1693,10 +1802,10 @@ def fifalgorithm_app():
                     for p in df_stats_all_players["Jogador"].unique()
                 ])
                 selected_players = st.multiselect(
-                    "🔍 Selecione os Jogadores (máx. 6):",
+                    "🔍 Selecione os Jogadores (máx. 8):",
                     options=player_names_for_selectbox,
                     default=[],
-                    max_selections=6,
+                    max_selections=8,
                     key="players_multiselect"
                 )
 
@@ -1722,226 +1831,493 @@ def fifalgorithm_app():
 
             if selected_players:
                 # ==============================================
-                # CÁLCULO DAS ESTATÍSTICAS PARA TODOS OS JOGADORES
+                # FUNÇÕES PARA CÁLCULO PRECISO
+                # ==============================================
+                def calcular_vitorias(df_resultados, jogador_nome):
+                    jogos_jogador = df_resultados[
+                        (df_resultados["Mandante"] == jogador_nome) |
+                        (df_resultados["Visitante"] == jogador_nome)
+                        ]
+                    vitorias = 0
+                    for _, jogo in jogos_jogador.iterrows():
+                        if jogo["Mandante"] == jogador_nome:
+                            if jogo["Mandante FT"] > jogo["Visitante FT"]:
+                                vitorias += 1
+                        else:
+                            if jogo["Visitante FT"] > jogo["Mandante FT"]:
+                                vitorias += 1
+                    return vitorias, len(jogos_jogador)
+
+                def calcular_over_15_gols_jogador(df_resultados, jogador_nome):
+                    jogos_jogador = df_resultados[
+                        (df_resultados["Mandante"] == jogador_nome) |
+                        (df_resultados["Visitante"] == jogador_nome)
+                        ]
+                    acertos = 0
+                    for _, jogo in jogos_jogador.iterrows():
+                        if jogo["Mandante"] == jogador_nome:
+                            gols_jogador = jogo["Mandante FT"]
+                        else:
+                            gols_jogador = jogo["Visitante FT"]
+                        if gols_jogador >= 2:
+                            acertos += 1
+                    return acertos, len(jogos_jogador)
+
+                def calcular_over_25_jogador(df_resultados, jogador_nome):
+                    jogos_jogador = df_resultados[
+                        (df_resultados["Mandante"] == jogador_nome) |
+                        (df_resultados["Visitante"] == jogador_nome)
+                        ]
+                    acertos = 0
+                    for _, jogo in jogos_jogador.iterrows():
+                        if jogo["Mandante"] == jogador_nome:
+                            gols = jogo["Mandante FT"]
+                        else:
+                            gols = jogo["Visitante FT"]
+                        if gols >= 3:
+                            acertos += 1
+                    return acertos, len(jogos_jogador)
+
+                def calcular_under_ft(df_resultados, jogador_nome, linha):
+                    jogos_jogador = df_resultados[
+                        (df_resultados["Mandante"] == jogador_nome) |
+                        (df_resultados["Visitante"] == jogador_nome)
+                        ]
+                    acertos = 0
+                    for _, jogo in jogos_jogador.iterrows():
+                        total_ft = jogo["Total FT"]
+                        if total_ft < linha:
+                            acertos += 1
+                    return acertos, len(jogos_jogador)
+
+                def calcular_mercado_ht(df_resultados, jogador_nome, mercado):
+                    jogos_jogador = df_resultados[
+                        (df_resultados["Mandante"] == jogador_nome) |
+                        (df_resultados["Visitante"] == jogador_nome)
+                        ]
+                    acertos = 0
+                    for _, jogo in jogos_jogador.iterrows():
+                        total_ht = jogo["Total HT"]
+                        if mercado == "Jogos 0.5 HT" and total_ht > 0.5:
+                            acertos += 1
+                        elif mercado == "Jogos 1.5 HT" and total_ht > 1.5:
+                            acertos += 1
+                        elif mercado == "Jogos 2.5 HT" and total_ht > 2.5:
+                            acertos += 1
+                        elif mercado == "BTTS HT":
+                            mandante_ht = jogo.get("Mandante HT", 0)
+                            visitante_ht = jogo.get("Visitante HT", 0)
+                            if mandante_ht > 0 and visitante_ht > 0:
+                                acertos += 1
+                    return acertos, len(jogos_jogador)
+
+                def calcular_mercado_ft(df_resultados, jogador_nome, mercado):
+                    jogos_jogador = df_resultados[
+                        (df_resultados["Mandante"] == jogador_nome) |
+                        (df_resultados["Visitante"] == jogador_nome)
+                        ]
+                    acertos = 0
+                    for _, jogo in jogos_jogador.iterrows():
+                        total_ft = jogo["Total FT"]
+                        if mercado == "Jogos 0.5 FT" and total_ft > 0.5:
+                            acertos += 1
+                        elif mercado == "Jogos 1.5 FT" and total_ft > 1.5:
+                            acertos += 1
+                        elif mercado == "Jogos 2.5 FT" and total_ft > 2.5:
+                            acertos += 1
+                        elif mercado == "Jogos 3.5 FT" and total_ft > 3.5:
+                            acertos += 1
+                        elif mercado == "Jogos 4.5 FT" and total_ft > 4.5:
+                            acertos += 1
+                        elif mercado == "Jogos 5.5 FT" and total_ft > 5.5:
+                            acertos += 1
+                        elif mercado == "BTTS FT":
+                            mandante_ft = jogo["Mandante FT"]
+                            visitante_ft = jogo["Visitante FT"]
+                            if mandante_ft > 0 and visitante_ft > 0:
+                                acertos += 1
+                    return acertos, len(jogos_jogador)
+
+                # ==============================================
+                # CÁLCULO PRECISO PARA TODOS OS JOGADORES
                 # ==============================================
                 all_results = []
 
                 for selected_player in selected_players:
                     cleaned_player_name = re.sub(r'^[🥇🥈🥉]\s', '', selected_player)
-                    player_data_row = df_stats_all_players[df_stats_all_players["Jogador"] == cleaned_player_name]
 
-                    if not player_data_row.empty:
-                        player_data = player_data_row.iloc[0]
-                        jogos_total = player_data["jogos_total"]
+                    # Calcular cada mercado com precisão
+                    vitorias, total_jogos = calcular_vitorias(df_resultados, cleaned_player_name)
+                    over_15_gols, _ = calcular_over_15_gols_jogador(df_resultados, cleaned_player_name)
+                    over_25_jogador, _ = calcular_over_25_jogador(df_resultados, cleaned_player_name)
+                    jogos_05_ht, _ = calcular_mercado_ht(df_resultados, cleaned_player_name, "Jogos 0.5 HT")
+                    jogos_15_ht, _ = calcular_mercado_ht(df_resultados, cleaned_player_name, "Jogos 1.5 HT")
+                    jogos_25_ht, _ = calcular_mercado_ht(df_resultados, cleaned_player_name, "Jogos 2.5 HT")
+                    btts_ht, _ = calcular_mercado_ht(df_resultados, cleaned_player_name, "BTTS HT")
+                    jogos_05_ft, _ = calcular_mercado_ft(df_resultados, cleaned_player_name, "Jogos 0.5 FT")
+                    jogos_15_ft, _ = calcular_mercado_ft(df_resultados, cleaned_player_name, "Jogos 1.5 FT")
+                    jogos_25_ft, _ = calcular_mercado_ft(df_resultados, cleaned_player_name, "Jogos 2.5 FT")
+                    jogos_35_ft, _ = calcular_mercado_ft(df_resultados, cleaned_player_name, "Jogos 3.5 FT")
+                    jogos_45_ft, _ = calcular_mercado_ft(df_resultados, cleaned_player_name, "Jogos 4.5 FT")
+                    jogos_55_ft, _ = calcular_mercado_ft(df_resultados, cleaned_player_name, "Jogos 5.5 FT")
+                    btts_ft, _ = calcular_mercado_ft(df_resultados, cleaned_player_name, "BTTS FT")
+                    under_35_ft, _ = calcular_under_ft(df_resultados, cleaned_player_name, 3.5)
+                    under_45_ft, _ = calcular_under_ft(df_resultados, cleaned_player_name, 4.5)
+                    under_55_ft, _ = calcular_under_ft(df_resultados, cleaned_player_name, 5.5)
 
-                        if jogos_total > 0:
-                            # Cálculo dos mercados
-                            market_data = [
-                                {"Mercado": "Vitória", "Acertos": player_data["vitorias"], "Jogos": jogos_total},
-                                {"Mercado": "Over 1.5 Gols Jogador",
-                                 "Acertos": player_data.get("over_15_gols_jogador", 0), "Jogos": jogos_total},
-                                {"Mercado": "Jogos 1.5 HT", "Acertos": player_data["over_15_ht_hits"],
-                                 "Jogos": jogos_total},
-                                {"Mercado": "Jogos 2.5 HT", "Acertos": player_data["over_25_ht_hits"],
-                                 "Jogos": jogos_total},
-                                {"Mercado": "BTTS HT", "Acertos": player_data["btts_ht_hits"], "Jogos": jogos_total},
-                                {"Mercado": "Jogos 1.5 FT", "Acertos": player_data["over_15_ft_hits"],
-                                 "Jogos": jogos_total},
-                                {"Mercado": "Jogos 2.5 FT", "Acertos": player_data["over_25_ft_hits"],
-                                 "Jogos": jogos_total},
-                                {"Mercado": "Jogos 3.5 FT", "Acertos": player_data["over_35_ft_hits"],
-                                 "Jogos": jogos_total},
-                                {"Mercado": "BTTS FT", "Acertos": player_data["btts_ft_hits"], "Jogos": jogos_total}
-                            ]
+                    if total_jogos > 0:
+                        # Lista de mercados na ORDEM SOLICITADA
+                        market_data = [
+                            {"Mercado": "Vitória", "Acertos": vitorias, "Jogos": total_jogos},
+                            {"Mercado": "Jogos 0.5 HT", "Acertos": jogos_05_ht, "Jogos": total_jogos},
+                            {"Mercado": "Jogos 1.5 HT", "Acertos": jogos_15_ht, "Jogos": total_jogos},
+                            {"Mercado": "Jogos 2.5 HT", "Acertos": jogos_25_ht, "Jogos": total_jogos},
+                            {"Mercado": "BTTS HT", "Acertos": btts_ht, "Jogos": total_jogos},
+                            {"Mercado": "Over 1.5 Jogador", "Acertos": over_15_gols, "Jogos": total_jogos},
+                            {"Mercado": "Over 2.5 Jogador", "Acertos": over_25_jogador, "Jogos": total_jogos},
+                            {"Mercado": "Jogos 0.5 FT", "Acertos": jogos_05_ft, "Jogos": total_jogos},
+                            {"Mercado": "Jogos 1.5 FT", "Acertos": jogos_15_ft, "Jogos": total_jogos},
+                            {"Mercado": "Jogos 2.5 FT", "Acertos": jogos_25_ft, "Jogos": total_jogos},
+                            {"Mercado": "Jogos 3.5 FT", "Acertos": jogos_35_ft, "Jogos": total_jogos},
+                            {"Mercado": "Jogos 4.5 FT", "Acertos": jogos_45_ft, "Jogos": total_jogos},
+                            {"Mercado": "Jogos 5.5 FT", "Acertos": jogos_55_ft, "Jogos": total_jogos},
+                            {"Mercado": "BTTS FT", "Acertos": btts_ft, "Jogos": total_jogos},
+                            {"Mercado": "Jogos Under 3.5 FT", "Acertos": under_35_ft, "Jogos": total_jogos},
+                            {"Mercado": "Jogos Under 4.5 FT", "Acertos": under_45_ft, "Jogos": total_jogos},
+                            {"Mercado": "Jogos Under 5.5 FT", "Acertos": under_55_ft, "Jogos": total_jogos}
+                        ]
 
-                            for market in market_data:
-                                hits = market["Acertos"]
-                                total_games = market["Jogos"]
-                                misses = total_games - hits
-                                hit_rate = (hits / total_games) * 100 if total_games > 0 else 0
+                        for market in market_data:
+                            hits = market["Acertos"]
+                            total_games = market["Jogos"]
+                            misses = total_games - hits
+                            hit_rate = (hits / total_games) * 100 if total_games > 0 else 0
 
-                                profit_loss_units = (hits * (default_odds - 1)) - misses
-                                profit_loss_reais = profit_loss_units * stake_value
+                            profit_loss_units = (hits * (default_odds - 1)) - misses
+                            total_invested = total_games * stake_value
+                            roi = (profit_loss_units / total_invested) * 100 if total_invested > 0 else 0
 
-                                total_invested = total_games * stake_value
-                                roi = (profit_loss_reais / total_invested) * 100 if total_invested > 0 else 0
-
-                                all_results.append({
-                                    "Jogador": selected_player,
-                                    "Mercado": market["Mercado"],
-                                    "Total de Jogos": total_games,
-                                    "Acertos": hits,
-                                    "Erros": misses,
-                                    "Taxa Acerto (%)": hit_rate,
-                                    "Lucro/Prejuizo (Unidades)": profit_loss_units,
-                                    "ROI (%)": roi
-                                })
+                            all_results.append({
+                                "Jogador": selected_player,
+                                "Mercado": market["Mercado"],
+                                "Total de Jogos": total_games,
+                                "Acertos": hits,
+                                "Erros": misses,
+                                "Taxa Acerto (%)": hit_rate,
+                                "Lucro/Prejuizo (Unidades)": profit_loss_units,
+                                "ROI (%)": roi
+                            })
 
                 if all_results:
                     df_all_results = pd.DataFrame(all_results)
 
                     # ==============================================
-                    # TABELA COMPARATIVA DETALHADA (ESTILO BLACK)
+                    # CSS PARA TEMA ESCURO
                     # ==============================================
-                    st.subheader("📋 Tabela Comparativa Detalhada")
-
-                    # Reordenar as colunas conforme solicitado
-                    column_order = [
-                        "Jogador", "Mercado", "Total de Jogos", "Acertos", "Erros",
-                        "Taxa Acerto (%)", "Lucro/Prejuizo (Unidades)", "ROI (%)"
-                    ]
-
-                    df_display = df_all_results[column_order]
-
-                    # Função para aplicar estilo condicional
-                    def color_negative_red_positive_green(val):
-                        if isinstance(val, (int, float)):
-                            if val > 0:
-                                color = '#00FF00'  # Verde
-                            elif val < 0:
-                                color = '#FF0000'  # Vermelho
-                            else:
-                                color = '#FFFFFF'  # Branco
-                            return f'color: {color}; font-weight: bold;'
-                        return ''
-
-                    # Aplicar estilo dark com cores condicionais (CORREÇÃO AQUI)
-                    styled_df = df_display.style \
-                        .set_properties(**{
-                        'background-color': '#000000',
-                        'color': '#FFFFFF',
-                        'border-color': '#333333'
-                    }) \
-                        .map(color_negative_red_positive_green, subset=['Lucro/Prejuizo (Unidades)', 'ROI (%)']) \
-                        .format({
-                        "Taxa Acerto (%)": "{:.1f}%",
-                        "Lucro/Prejuizo (Unidades)": "{:.2f}",
-                        "ROI (%)": "{:.1f}%"
-                    })
-
-                    st.dataframe(styled_df, use_container_width=True, height=500)
+                    st.markdown("""
+                    <style>
+                    .dark-table {
+                        background-color: #1E1E1E !important;
+                        color: white !important;
+                        width: 100% !important;
+                        table-layout: fixed !important;
+                    }
+                    .dark-table thead th {
+                        background-color: #2C2C2C !important;
+                        color: white !important;
+                        font-weight: bold !important;
+                        text-align: center !important;
+                        border: 1px solid #444 !important;
+                        padding: 8px !important;
+                    }
+                    .dark-table td {
+                        background-color: #1E1E1E !important;
+                        color: white !important;
+                        border: 1px solid #444 !important;
+                        text-align: center !important;
+                        padding: 8px !important;
+                        white-space: nowrap !important;
+                    }
+                    .profit-positive {
+                        background-color: #155724 !important;
+                        color: #d4edda !important;
+                        font-weight: bold !important;
+                    }
+                    .profit-negative {
+                        background-color: #721c24 !important;
+                        color: #f8d7da !important;
+                        font-weight: bold !important;
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
 
                     # ==============================================
-                    # MELHORES OPORTUNIDADES (FORMATADO BONITO)
+                    # TABELAS INDIVIDUAIS PARA CADA JOGADOR
                     # ==============================================
-                    st.subheader("💡 Análise de Oportunidades")
+                    for player in selected_players:
+                        st.markdown("---")
+                        st.subheader(f"🎯 Desempenho Financeiro - {player}")
 
-                    # Encontrar as melhores combinações jogador-mercado
-                    best_opportunities = df_all_results.nlargest(10, 'Lucro/Prejuizo (Unidades)')
-                    worst_opportunities = df_all_results.nsmallest(10, 'Lucro/Prejuizo (Unidades)')
+                        player_results = df_all_results[df_all_results['Jogador'] == player]
 
-                    col1, col2 = st.columns(2)
+                        if not player_results.empty:
+                            player_results = player_results.sort_values('Lucro/Prejuizo (Unidades)', ascending=False)
 
-                    with col1:
-                        st.success("✅ **TOP Melhores Oportunidades:**")
-                        for _, row in best_opportunities.iterrows():
-                            if row['Lucro/Prejuizo (Unidades)'] > 0:
-                                lucro_por_jogo = row['Lucro/Prejuizo (Unidades)'] / row['Total de Jogos']
+                            # Formatar valores
+                            player_results_formatted = player_results.copy()
+                            player_results_formatted['Taxa Acerto (%)'] = player_results_formatted[
+                                'Taxa Acerto (%)'].apply(lambda x: f"{x:.1f}%")
+                            player_results_formatted['Lucro/Prejuizo (Unidades)'] = player_results_formatted[
+                                'Lucro/Prejuizo (Unidades)'].apply(lambda x: f"{x:.2f} Unid")
+                            player_results_formatted['ROI (%)'] = player_results_formatted['ROI (%)'].apply(
+                                lambda x: f"{x:.1f}%")
+
+                            column_order = [
+                                "Mercado", "Total de Jogos", "Acertos", "Erros",
+                                "Taxa Acerto (%)", "Lucro/Prejuizo (Unidades)", "ROI (%)"
+                            ]
+
+                            df_player_display = player_results_formatted[column_order]
+
+                            # Aplicar estilo
+                            styled_data = []
+                            for _, row in df_player_display.iterrows():
+                                styled_row = {}
+                                for col in column_order:
+                                    cell_value = row[col]
+                                    cell_class = ''
+                                    if col == 'Lucro/Prejuizo (Unidades)' and 'Unid' in str(cell_value):
+                                        num_val = float(str(cell_value).replace(' Unid', ''))
+                                        cell_class = 'profit-positive' if num_val > 0 else 'profit-negative'
+                                    elif col == 'ROI (%)' and '%' in str(cell_value):
+                                        num_val = float(str(cell_value).replace('%', ''))
+                                        cell_class = 'profit-positive' if num_val > 0 else 'profit-negative'
+
+                                    if cell_class:
+                                        styled_row[col] = f'<div class="{cell_class}">{cell_value}</div>'
+                                    else:
+                                        styled_row[col] = cell_value
+                                styled_data.append(styled_row)
+
+                            df_styled = pd.DataFrame(styled_data)
+
+                            st.markdown('<div class="dark-table">', unsafe_allow_html=True)
+                            st.write(df_styled.to_html(escape=False, index=False), unsafe_allow_html=True)
+                            st.markdown('</div>', unsafe_allow_html=True)
+
+                            # DICAS ESTRATÉGICAS
+                            st.subheader("💎 Dicas Estratégicas")
+                            top_5_mercados = player_results.nlargest(5, 'Lucro/Prejuizo (Unidades)')
+
+                            for _, mercado in top_5_mercados.iterrows():
+                                if mercado['Lucro/Prejuizo (Unidades)'] > 0:
+                                    if mercado['Taxa Acerto (%)'] >= 90:
+                                        emoji, intensidade, recomendacao = "🔥", "absurdo", "OPORTUNIDADE EXCELENTE"
+                                    elif mercado['Taxa Acerto (%)'] >= 80:
+                                        emoji, intensidade, recomendacao = "⚡", "excelente", "OPORTUNIDADE DE ALTO NÍVEL"
+                                    elif mercado['Taxa Acerto (%)'] >= 70:
+                                        emoji, intensidade, recomendacao = "🎯", "muito bom", "BOA OPORTUNIDADE"
+                                    else:
+                                        emoji, intensidade, recomendacao = "📈", "bom", "OPORTUNIDADE INTERESSANTE"
+
+                                    st.success(
+                                        f"{emoji} **{recomendacao}**: O mercado **{mercado['Mercado']}** em jogos do **{player}** "
+                                        f"tem um aproveitamento {intensidade} de **{mercado['Taxa Acerto (%)']:.1f}%**, "
+                                        f"gerando um lucro de **{mercado['Lucro/Prejuizo (Unidades)']:.2f} Unid** com odd {default_odds}."
+                                    )
+
+                            # ALERTAS DE RISCO
+                            worst_mercados = player_results[player_results['Lucro/Prejuizo (Unidades)'] < 0]
+                            if not worst_mercados.empty:
+                                st.subheader("⚠️ Alertas de Risco")
+                                for _, mercado in worst_mercados.iterrows():
+                                    st.error(
+                                        f"🔴 **EVITAR**: O mercado **{mercado['Mercado']}** do **{player}** "
+                                        f"está com prejuízo de **{mercado['Lucro/Prejuizo (Unidades)']:.2f} Unid**. "
+                                        f"Apenas **{mercado['Taxa Acerto (%)']:.1f}%** de acerto."
+                                    )
+
+                            # RESUMO ESTATÍSTICO
+                            col_res1, col_res2, col_res3, col_res4 = st.columns(4)
+                            with col_res1:
+                                total_lucro = player_results['Lucro/Prejuizo (Unidades)'].sum()
+                                st.metric("💰 Lucro Total", f"{total_lucro:.2f} Unid",
+                                          delta_color="normal" if total_lucro >= 0 else "inverse")
+                            with col_res2:
+                                melhor_mercado = player_results.nlargest(1, 'Lucro/Prejuizo (Unidades)').iloc[0]
+                                st.metric("🏆 Melhor Mercado", melhor_mercado['Mercado'],
+                                          f"{melhor_mercado['Lucro/Prejuizo (Unidades)']:.2f} Unid")
+                            with col_res3:
+                                pior_mercado = player_results.nsmallest(1, 'Lucro/Prejuizo (Unidades)').iloc[0]
+                                st.metric("⚡ Pior Mercado", pior_mercado['Mercado'],
+                                          f"{pior_mercado['Lucro/Prejuizo (Unidades)']:.2f} Unid")
+                            with col_res4:
+                                avg_roi = player_results['ROI (%)'].mean()
+                                st.metric("📈 ROI Médio", f"{avg_roi:.1f}%")
+
+                    # ==============================================
+                    # GRADE DE CONFRONTOS - ANÁLISE ESTRATÉGICA
+                    # ==============================================
+                    if len(selected_players) >= 2:
+                        st.markdown("---")
+                        st.header("⚔️ Grade de Confrontos - Análise Estratégica")
+                        st.write("Cruza os dados de desempenho para identificar mercados lucrativos nos confrontos")
+
+                        # Gerar confrontos
+                        confrontos = []
+                        for i in range(len(selected_players)):
+                            for j in range(i + 1, len(selected_players)):
+                                confrontos.append((selected_players[i], selected_players[j]))
+
+                        recomendacoes_confrontos = []
+
+                        for jogador1, jogador2 in confrontos:
+                            dados_jogador1 = df_all_results[df_all_results['Jogador'] == jogador1]
+                            dados_jogador2 = df_all_results[df_all_results['Jogador'] == jogador2]
+
+                            if not dados_jogador1.empty and not dados_jogador2.empty:
+                                mercados_lucrativos = []
+
+                                for mercado in dados_jogador1['Mercado'].unique():
+                                    mercado_j1 = dados_jogador1[dados_jogador1['Mercado'] == mercado]
+                                    mercado_j2 = dados_jogador2[dados_jogador2['Mercado'] == mercado]
+
+                                    if not mercado_j1.empty and not mercado_j2.empty:
+                                        lucro_j1 = mercado_j1.iloc[0]['Lucro/Prejuizo (Unidades)']
+                                        lucro_j2 = mercado_j2.iloc[0]['Lucro/Prejuizo (Unidades)']
+                                        taxa_j1 = mercado_j1.iloc[0]['Taxa Acerto (%)']
+                                        taxa_j2 = mercado_j2.iloc[0]['Taxa Acerto (%)']
+
+                                        if lucro_j1 > 0 and lucro_j2 > 0:
+                                            mercados_lucrativos.append({
+                                                "Mercado": mercado,
+                                                "Lucro J1": lucro_j1,
+                                                "Lucro J2": lucro_j2,
+                                                "Taxa J1": taxa_j1,
+                                                "Taxa J2": taxa_j2,
+                                                "Confiança": "🟢 Excelente"
+                                            })
+                                        elif (lucro_j1 > 0 and taxa_j1 >= 70) or (lucro_j2 > 0 and taxa_j2 >= 70):
+                                            mercados_lucrativos.append({
+                                                "Mercado": mercado,
+                                                "Lucro J1": lucro_j1,
+                                                "Lucro J2": lucro_j2,
+                                                "Taxa J1": taxa_j1,
+                                                "Taxa J2": taxa_j2,
+                                                "Confiança": "🟡 Boa"
+                                            })
+
+                                if mercados_lucrativos:
+                                    mercados_lucrativos.sort(key=lambda x: (
+                                        0 if "🟢" in x["Confiança"] else 1,
+                                        x["Lucro J1"] + x["Lucro J2"]
+                                    ), reverse=True)
+
+                                    for mercado_info in mercados_lucrativos[:3]:
+                                        recomendacoes_confrontos.append({
+                                            "Confronto": f"{jogador1} vs {jogador2}",
+                                            "Mercado Recomendado": mercado_info["Mercado"],
+                                            "Confiança": mercado_info["Confiança"],
+                                            "Lucro Potencial": f"{(mercado_info['Lucro J1'] + mercado_info['Lucro J2']):.2f} Unid",
+                                            "Desempenho J1": f"{mercado_info['Taxa J1']:.1f}%",
+                                            "Desempenho J2": f"{mercado_info['Taxa J2']:.1f}%"
+                                        })
+
+                        # EXIBIR RECOMENDAÇÕES
+                        if recomendacoes_confrontos:
+                            df_recomendacoes = pd.DataFrame(recomendacoes_confrontos)
+
+                            st.subheader("🎯 Melhores Oportunidades de Apostas")
+
+                            # Mercados mais frequentes
+                            st.success("**💎 MERCADOS MAIS PROMISSORES:**")
+                            mercados_frequentes = df_recomendacoes['Mercado Recomendado'].value_counts()
+                            for mercado, count in mercados_frequentes.items():
+                                st.write(f"• **{mercado}**: Recomendado em {count} confrontos")
+
+                            st.dataframe(df_recomendacoes, use_container_width=True, height=300)
+
+                            # Top 3 confrontos
+                            st.subheader("🏆 Top 3 Confrontos com Maior Potencial")
+                            lucro_por_confronto = {}
+                            for rec in recomendacoes_confrontos:
+                                confronto = rec["Confronto"]
+                                lucro = float(rec["Lucro Potencial"].replace(" Unid", ""))
+                                lucro_por_confronto[confronto] = lucro_por_confronto.get(confronto, 0) + lucro
+
+                            top_confrontos = sorted(lucro_por_confronto.items(), key=lambda x: x[1], reverse=True)[:3]
+
+                            col1, col2, col3 = st.columns(3)
+                            for i, (confronto, lucro) in enumerate(top_confrontos):
+                                with [col1, col2, col3][i]:
+                                    st.metric(f"{['🥇', '🥈', '🥉'][i]} {confronto}", f"{lucro:.2f} Unid",
+                                              "Alto Potencial")
+
+                            # Estratégia
+                            st.subheader("💡 Estratégia Recomendada")
+                            mercado_mais_frequente = df_recomendacoes['Mercado Recomendado'].mode()[0]
+                            st.info(f"""
+                            **🎯 FOQUE NO MERCADO:** {mercado_mais_frequente}
+
+                            • **Odd ideal**: 1.80-2.20
+                            • **Gestão de banca**: 2-3% por aposta
+                            • **Priorize os confrontos do Top 3**
+                            """)
+
+                        else:
+                            st.info("📊 Não foram identificadas oportunidades claras nos confrontos analisados.")
+
+                    # ==============================================
+                    # COMPARAÇÃO ENTRE JOGADORES
+                    # ==============================================
+                    if len(selected_players) > 1:
+                        st.markdown("---")
+                        st.subheader("📊 Comparativo entre Jogadores")
+
+                        comparativo = df_all_results.groupby('Jogador').agg({
+                            'Total de Jogos': 'first',
+                            'Lucro/Prejuizo (Unidades)': 'sum',
+                            'ROI (%)': 'mean'
+                        }).reset_index()
+
+                        comparativo = comparativo.sort_values('Lucro/Prejuizo (Unidades)', ascending=False)
+
+                        col_comp1, col_comp2 = st.columns(2)
+                        with col_comp1:
+                            st.write("**🏆 Ranking por Lucro:**")
+                            for i, (_, jogador) in enumerate(comparativo.iterrows()):
                                 st.write(
-                                    f"💰 **{row['Jogador']} - {row['Mercado']}** "
-                                    f"📈 {lucro_por_jogo:.2f} unid por jogo "
-                                    f"🎯 {row['Taxa Acerto (%)']:.1f}% de acerto "
-                                    f"💰 Lucro total: {row['Lucro/Prejuizo (Unidades)']:.1f}u"
-                                )
-
-                    with col2:
-                        # Filtrar apenas prejuízos
-                        worst_with_loss = worst_opportunities[worst_opportunities['Lucro/Prejuizo (Unidades)'] < 0]
-                        if not worst_with_loss.empty:
-                            st.error("❌ **OPORTUNIDADES PARA EVITAR:**")
-                            for _, row in worst_with_loss.iterrows():
-                                lucro_por_jogo = row['Lucro/Prejuizo (Unidades)'] / row['Total de Jogos']
-                                st.write(
-                                    f"🔴 **{row['Jogador']} - {row['Mercado']}** "
-                                    f"📉 {lucro_por_jogo:.2f} unid por jogo "
-                                    f"🎯 {row['Taxa Acerto (%)']:.1f}% de acerto "
-                                    f"💸 Prejuízo: {row['Lucro/Prejuizo (Unidades)']:.1f}u"
-                                )
-
-                    # ==============================================
-                    # RANKING POR MERCADO
-                    # ==============================================
-                    st.subheader("🏆 Ranking por Mercado")
-
-                    # Selecionar mercado para ranking
-                    available_markets = df_all_results['Mercado'].unique()
-                    selected_market_rank = st.selectbox(
-                        "Selecione o mercado para ver o ranking:",
-                        options=available_markets,
-                        key="market_ranking"
-                    )
-
-                    market_ranking = df_all_results[df_all_results['Mercado'] == selected_market_rank]
-                    market_ranking = market_ranking.sort_values('Lucro/Prejuizo (Unidades)', ascending=False)
-
-                    # Exibir ranking formatado
-                    st.info(f"**Ranking do mercado: {selected_market_rank}**")
-
-                    for i, (_, row) in enumerate(market_ranking.iterrows()):
-                        lucro_por_jogo = row['Lucro/Prejuizo (Unidades)'] / row['Total de Jogos']
-                        emoji = "🟢" if row['Lucro/Prejuizo (Unidades)'] > 0 else "🔴"
-
-                        st.write(
-                            f"{emoji} **{i + 1}º {row['Jogador']}** - "
-                            f"{row['Lucro/Prejuizo (Unidades)']:.1f}u | "
-                            f"{row['Taxa Acerto (%)']:.1f}% | "
-                            f"{lucro_por_jogo:.2f}u/jogo"
-                        )
-
-                    # ==============================================
-                    # RESUMO POR JOGADOR
-                    # ==============================================
-                    st.subheader("👤 Resumo por Jogador")
-
-                    # Calcular totais por jogador
-                    player_summary = df_all_results.groupby('Jogador').agg({
-                        'Total de Jogos': 'first',
-                        'Lucro/Prejuizo (Unidades)': 'sum',
-                        'ROI (%)': 'mean'
-                    }).reset_index()
-
-                    player_summary['Lucro por Jogo'] = player_summary['Lucro/Prejuizo (Unidades)'] / player_summary[
-                        'Total de Jogos']
-                    player_summary = player_summary.sort_values('Lucro/Prejuizo (Unidades)', ascending=False)
-
-                    # Exibir resumo em cards
-                    cols = st.columns(len(selected_players))
-                    for i, (_, player) in enumerate(player_summary.iterrows()):
-                        with cols[i]:
-                            profit_color = "green" if player['Lucro/Prejuizo (Unidades)'] > 0 else "red"
-                            emoji = "✅" if player['Lucro/Prejuizo (Unidades)'] > 0 else "❌"
-
-                            st.markdown(
-                                f"**{emoji} {player['Jogador']}**\n\n"
-                                f"📊 {player['Total de Jogos']} jogos\n"
-                                f"💰 **{player['Lucro/Prejuizo (Unidades)']:.1f}u**\n"
-                                f"📈 {player['Lucro por Jogo']:.3f}u/jogo\n"
-                                f"🎯 ROI: {player['ROI (%)']:.1f}%",
-                                help=f"Desempenho geral em todos os mercados"
-                            )
+                                    f"{i + 1}º **{jogador['Jogador']}** - {jogador['Lucro/Prejuizo (Unidades)']:.2f}u (ROI: {jogador['ROI (%)']:.1f}%)")
+                        with col_comp2:
+                            st.write("**🎯 Melhor Mercado por Jogador:**")
+                            for jogador in selected_players:
+                                jogador_data = df_all_results[df_all_results['Jogador'] == jogador]
+                                if not jogador_data.empty:
+                                    melhor = jogador_data.nlargest(1, 'Lucro/Prejuizo (Unidades)').iloc[0]
+                                    st.write(
+                                        f"**{jogador}**: {melhor['Mercado']} ({melhor['Lucro/Prejuizo (Unidades)']:.2f}u)")
 
                     # ==============================================
                     # DOWNLOAD DOS DADOS
                     # ==============================================
+                    st.markdown("---")
                     st.subheader("📥 Exportar Dados")
-
                     csv = df_all_results.to_csv(index=False).encode('utf-8')
                     st.download_button(
                         label="💾 Baixar Análise Completa (CSV)",
                         data=csv,
-                        file_name='analise_comparativa_jogadores.csv',
+                        file_name='analise_jogadores_detalhada.csv',
                         mime='text/csv',
-                        help="Baixe os dados completos da análise para Excel ou Google Sheets"
                     )
 
                 else:
                     st.info("📊 Nenhum dado encontrado para os jogadores selecionados")
 
             else:
-                st.info("👆 Selecione pelo menos um jogador para ver a análise comparativa")
+                st.info("👆 Selecione pelo menos um jogador para ver a análise")
 
         else:
-            st.info("📊 Nenhum dado de jogador disponível para análise")
+            st.info("📊 Aguardando carregamento dos dados...")
 
     # Aba 7: Salvar Jogos
     with tabs[6]:
