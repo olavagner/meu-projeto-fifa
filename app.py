@@ -1788,26 +1788,37 @@ def fifalgorithm_app():
     # Aba 6: Ganhos & Perdas
     with tabs[5]:
         st.header("💰 Análise Individual de Jogadores")
-        st.write("Analise o desempenho financeiro detalhado de cada jogador")
+        st.write("Analise o desempenho financeiro detalhado dos jogadores ativos")
 
         if not df_stats_all_players.empty and not df_resultados.empty:
             # ==============================================
-            # SELEÇÃO DE JOGADORES E CONFIGURAÇÕES
+            # SELEÇÃO DE JOGADORES ATIVOS (DA ABA AO VIVO)
             # ==============================================
             col1, col2, col3 = st.columns([2, 1, 1])
 
             with col1:
-                player_names_for_selectbox = sorted([
-                    re.sub(r'^[🥇🥈🥉]\s', '', p)
-                    for p in df_stats_all_players["Jogador"].unique()
-                ])
-                selected_players = st.multiselect(
-                    "🔍 Selecione os Jogadores (máx. 8):",
-                    options=player_names_for_selectbox,
-                    default=[],
-                    max_selections=8,
-                    key="players_multiselect"
-                )
+                # Obter jogadores ativos da lista ao vivo
+                jogadores_ativos = []
+                if not df_live_display.empty and 'Mandante' in df_live_display.columns and 'Visitante' in df_live_display.columns:
+                    # Extrair todos os jogadores únicos da lista ao vivo
+                    mandantes_ativos = df_live_display['Mandante'].unique()
+                    visitantes_ativos = df_live_display['Visitante'].unique()
+                    jogadores_ativos = sorted(list(set(mandantes_ativos) | set(visitantes_ativos)))
+
+                if jogadores_ativos:
+                    selected_players = st.multiselect(
+                        "🔍 Selecione os Jogadores Ativos (máx. 8):",
+                        options=jogadores_ativos,
+                        default=[],
+                        max_selections=8,
+                        key="players_multiselect_active"
+                    )
+
+                    # Mostrar contador de jogadores ativos
+                    st.info(f"🎮 {len(jogadores_ativos)} jogadores ativos nas próximas partidas")
+                else:
+                    st.warning("⏳ Nenhum jogo ao vivo no momento")
+                    selected_players = []
 
             with col2:
                 default_odds = st.number_input(
@@ -1828,6 +1839,14 @@ def fifalgorithm_app():
                     step=10.0,
                     key="stake_input"
                 )
+
+            # ==============================================
+            # BOTÃO PARA ANALISAR TODOS OS JOGADORES ATIVOS
+            # ==============================================
+            if jogadores_ativos and st.button("📊 Analisar Todos os Jogadores Ativos", type="primary"):
+                # Selecionar automaticamente todos os jogadores ativos (limitado a 8)
+                selected_players = jogadores_ativos[:8]
+                st.success(f"Analisando {len(selected_players)} jogadores ativos!")
 
             if selected_players:
                 # ==============================================
