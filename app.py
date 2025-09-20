@@ -22,6 +22,238 @@ from io import BytesIO
 import base64
 import threading
 
+
+# ==============================================
+# 🔥 COLE A PARTIR DAQUI 🔥
+# ==============================================
+
+# ==============================================
+# FUNÇÕES DE CLASSIFICAÇÃO E ESTILOS NOVAS
+# ==============================================
+
+def classificar_tendencias_separadas(sugestao_ht, sugestao_ft):
+    """Classifica tendências separadas para HT e FT"""
+
+    # Classificação para HT
+    def classificar_ht(sugestao):
+        sugestao_str = str(sugestao)
+        if "Over 2.5" in sugestao_str:
+            return "🔥 OVER HT FORTE", "high-over-ht"
+        elif "Over 1.5" in sugestao_str:
+            return "✅ OVER HT", "medium-over-ht"
+        elif "Over 0.5" in sugestao_str:
+            return "📈 OVER HT LEVE", "light-over-ht"
+        elif "Under" in sugestao_str:
+            return "🔻 UNDER HT", "under-ht"
+        else:
+            return "⚖️ HT NEUTRO", "neutral-ht"
+
+    # Classificação para FT
+    def classificar_ft(sugestao):
+        sugestao_str = str(sugestao)
+        if "Over 5.5" in sugestao_str or "Over 4.5" in sugestao_str:
+            return "🔥 OVER FT FORTE", "high-over-ft"
+        elif "Over 3.5" in sugestao_str:
+            return "✅ OVER FT", "medium-over-ft"
+        elif "Over 2.5" in sugestao_str:
+            return "📈 OVER FT LEVE", "light-over-ft"
+        elif "Over 1.5" in sugestao_str or "Over 0.5" in sugestao_str:
+            return "↗️ FT OFENSIVO", "offensive-ft"
+        elif "Under" in sugestao_str:
+            return "🔻 UNDER FT", "under-ft"
+        else:
+            return "⚖️ FT NEUTRO", "neutral-ft"
+
+    tendencia_ht, classe_ht = classificar_ht(sugestao_ht)
+    tendencia_ft, classe_ft = classificar_ft(sugestao_ft)
+
+    return tendencia_ht, classe_ht, tendencia_ft, classe_ft
+
+
+def calcular_score_tendencia(tendencia):
+    """Calcula score para comparar tendências"""
+    scores = {
+        "🔥 OVER HT FORTE": 4, "🔥 OVER FT FORTE": 4,
+        "✅ OVER HT": 3, "✅ OVER FT": 3,
+        "📈 OVER HT LEVE": 2, "📈 OVER FT LEVE": 2,
+        "↗️ FT OFENSIVO": 2,
+        "⚖️ HT NEUTRO": 1, "⚖️ FT NEUTRO": 1,
+        "🔻 UNDER HT": 0, "🔻 UNDER FT": 0
+    }
+    return scores.get(tendencia, 0)
+
+
+def aplicar_estilos_tabela(df):
+    """Aplica estilos condicionais à tabela"""
+    if df.empty:
+        return df
+
+    styled_df = df.copy()
+
+    # Adicionar colunas de tendência separadas
+    tendencias_ht = []
+    tendencias_ft = []
+    melhores_tempos = []
+
+    for _, row in styled_df.iterrows():
+        tendencia_ht, classe_ht, tendencia_ft, classe_ft = classificar_tendencias_separadas(
+            row.get('Sugestão HT', ''), row.get('Sugestão FT', '')
+        )
+
+        # Identificar qual tempo está melhor
+        ht_score = calcular_score_tendencia(tendencia_ht)
+        ft_score = calcular_score_tendencia(tendencia_ft)
+
+        if ht_score > ft_score:
+            melhor_tempo = "HT ⭐"
+            classe_melhor = "melhor-tempo-ht"
+        elif ft_score > ht_score:
+            melhor_tempo = "FT ⭐"
+            classe_melhor = "melhor-tempo-ft"
+        else:
+            melhor_tempo = "═"
+            classe_melhor = "neutral-tempo"
+
+        tendencias_ht.append(f'<div class="tendencia-cell {classe_ht}">{tendencia_ht}</div>')
+        tendencias_ft.append(f'<div class="tendencia-cell {classe_ft}">{tendencia_ft}</div>')
+        melhores_tempos.append(f'<div class="tendencia-cell {classe_melhor}">{melhor_tempo}</div>')
+
+    # Adicionar as novas colunas
+    styled_df['Tendência HT'] = tendencias_ht
+    styled_df['Tendência FT'] = tendencias_ft
+    styled_df['Melhor ⭐'] = melhores_tempos
+
+    return styled_df
+
+
+# ==============================================
+# ESTILOS CSS PERSONALIZADOS
+# ==============================================
+st.markdown("""
+<style>
+    /* Estilos para HT */
+    .high-over-ht {
+        background: linear-gradient(90deg, #1b5e20, #2e7d32) !important;
+        color: #69f0ae !important;
+        font-weight: bold !important;
+    }
+
+    .medium-over-ht {
+        background-color: #2e7d32 !important;
+        color: #c8e6c9 !important;
+        font-weight: bold !important;
+    }
+
+    .light-over-ht {
+        background-color: #388e3c !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+
+    .under-ht {
+        background-color: #d32f2f !important;
+        color: #ffcdd2 !important;
+        font-weight: bold !important;
+    }
+
+    .neutral-ht {
+        background-color: #78909c !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+
+    /* Estilos para FT */
+    .high-over-ft {
+        background: linear-gradient(90deg, #004d40, #00695c) !important;
+        color: #1de9b6 !important;
+        font-weight: bold !important;
+    }
+
+    .medium-over-ft {
+        background-color: #00796b !important;
+        color: #b2dfdb !important;
+        font-weight: bold !important;
+    }
+
+    .light-over-ft {
+        background-color: #00897b !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+
+    .offensive-ft {
+        background-color: #43a047 !important;
+        color: #e8f5e8 !important;
+        font-weight: bold !important;
+    }
+
+    .under-ft {
+        background-color: #c62828 !important;
+        color: #ffebee !important;
+        font-weight: bold !important;
+    }
+
+    .neutral-ft {
+        background-color: #546e7a !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+
+    .tendencia-cell {
+        text-align: center !important;
+        font-weight: bold !important;
+        padding: 6px !important;
+        border-radius: 8px !important;
+        font-size: 12px !important;
+        margin: 2px !important;
+    }
+
+    /* Destaque para melhor tempo */
+    .melhor-tempo-ht {
+        background: linear-gradient(90deg, #ffd600, #ffea00) !important;
+        color: #000000 !important;
+        font-weight: bold !important;
+        border: 2px solid #ff6d00 !important;
+    }
+
+    .melhor-tempo-ft {
+        background: linear-gradient(90deg, #ffd600, #ffea00) !important;
+        color: #000000 !important;
+        font-weight: bold !important;
+        border: 2px solid #ff6d00 !important;
+    }
+
+    .neutral-tempo {
+        background-color: #78909c !important;
+        color: #ffffff !important;
+        font-weight: bold !important;
+    }
+
+    /* Ajuste de largura da tabela */
+    .main .block-container {
+        max-width: 95% !important;
+        padding-left: 2% !important;
+        padding-right: 2% !important;
+    }
+
+    /* Tabela responsiva */
+    .dataframe {
+        width: 100% !important;
+        font-size: 14px !important;
+    }
+
+    .dataframe th {
+        white-space: nowrap !important;
+        padding: 10px !important;
+    }
+
+    .dataframe td {
+        white-space: nowrap !important;
+        padding: 8px !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # ==============================================
 # CONFIGURAÇÕES PARA EVITAR ERROS DE CACHE
 # ==============================================
@@ -387,31 +619,35 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
 
             jm, jv = sm["jogos_total"], sv["jogos_total"]
 
+            # 🔥 NOVO: Cálculo das médias HT
             avg_m_gf_ht = sm["gols_marcados_ht"] / jm if jm else 0
             avg_m_ga_ht = sm["gols_sofridos_ht"] / jm if jm else 0
             avg_v_gf_ht = sv["gols_marcados_ht"] / jv if jv else 0
             avg_v_ga_ht = sv["gols_sofridos_ht"] / jv if jv else 0
 
+            # Cálculo do GP e GC para HT
+            gp_calc_ht = (avg_m_gf_ht + avg_v_ga_ht) / 2 if (jm and jv) else 0
+            gc_calc_ht = (avg_v_gf_ht + avg_m_ga_ht) / 2 if (jm and jv) else 0
+
+            # Cálculo das médias FT (já existente)
             avg_m_gf_ft = sm["gols_marcados"] / jm if jm else 0
             avg_m_ga_ft = sm["gols_sofridos"] / jm if jm else 0
             avg_v_gf_ft = sv["gols_marcados"] / jv if jv else 0
             avg_v_ga_ft = sv["gols_sofridos"] / jv if jv else 0
 
-            soma_ht_mandante = avg_m_gf_ht + avg_m_ga_ht
-            soma_ht_visitante = avg_v_gf_ht + avg_v_ga_ht
-            soma_ft_mandante = avg_m_gf_ft + avg_v_ga_ft
-            soma_ft_visitante = avg_v_gf_ft + avg_m_ga_ft
-
-            gols_ht_media_confronto = (soma_ht_mandante + soma_ht_visitante) / 2
-            gols_ft_media_confronto = (soma_ft_mandante + soma_ft_visitante) / 2
-
+            # Cálculo do GP e GC para FT (já existente)
             gp_calc = (avg_m_gf_ft + avg_v_ga_ft) / 2 if (jm and jv) else 0
             gc_calc = (avg_v_gf_ft + avg_m_ga_ft) / 2 if (jm and jv) else 0
 
-            sugestao_ht = sugerir_over_ht(gols_ht_media_confronto)
-            sugestao_ft = sugerir_over_ft(gols_ft_media_confronto)
+            # Médias totais HT e FT
+            media_ht_confronto = (gp_calc_ht + gc_calc_ht)
+            media_ft_confronto = (gp_calc + gc_calc)
 
-            # Novas colunas Over Mandante e Over Visitante
+            # Sugestões (já existente)
+            sugestao_ht = sugerir_over_ht(media_ht_confronto)
+            sugestao_ft = sugerir_over_ft(media_ft_confronto)
+
+            # 🔥 NOVO: Lógica para Over Mandante e Over Visitante (baseada no FT)
             over_mandante = ""
             over_visitante = ""
 
@@ -444,12 +680,18 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
                     "J2": jv,
                     "GP": gp_calc,
                     "GC": gc_calc,
-                    "Gols HT": gols_ht_media_confronto,
-                    "Gols FT": gols_ft_media_confronto,
+                    "Gols HT": media_ht_confronto,  # ← Já existia com outro nome
+                    "Gols FT": media_ft_confronto,  # ← Já existia com outro nome
                     "Sugestão HT": sugestao_ht,
                     "Sugestão FT": sugestao_ft,
                     "Over Mandante": over_mandante,
                     "Over Visitante": over_visitante,
+                    # 🔥 NOVAS COLUNAS ADICIONADAS:
+                    "GP HT": gp_calc_ht,
+                    "GC HT": gc_calc_ht,
+                    "Média HT": media_ht_confronto,
+                    "Média FT": media_ft_confronto,
+                    # ... mantém todas as outras colunas existentes ...
                     "0.5 HT": format_stats(sm["over_05_ht_hits"], jm, sv["over_05_ht_hits"], jv),
                     "1.5 HT": format_stats(sm["over_15_ht_hits"], jm, sv["over_15_ht_hits"], jv),
                     "2.5 HT": format_stats(sm["over_25_ht_hits"], jm, sv["over_25_ht_hits"], jv),
@@ -470,24 +712,32 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
 
         df_clean = pd.concat([df_base, df_stats], axis=1)
         df_display = df_clean.copy()
+
+        # Formatação para exibição
+        df_display["GP HT"] = df_display["GP HT"].apply(lambda x: f"{x:.2f}")
+        df_display["GC HT"] = df_display["GC HT"].apply(lambda x: f"{x:.2f}")
+        df_display["Média HT"] = df_display["Média HT"].apply(lambda x: f"{x:.2f}")
+        df_display["Média FT"] = df_display["Média FT"].apply(lambda x: f"{x:.2f}")
+        # Mantém a formatação original das outras colunas
         df_display["Gols HT"] = df_display["Gols HT"].apply(format_gols_ht_com_icone_para_display)
         df_display["Gols FT"] = df_display["Gols FT"].apply(lambda x: f"{x:.2f}")
         df_display["GP"] = df_display["GP"].apply(lambda x: f"{x:.2f}")
         df_display["GC"] = df_display["GC"].apply(lambda x: f"{x:.2f}")
 
+        # Ordem das colunas - EXATAMENTE como solicitado
         colunas_ao_vivo_solicitadas = [
-            "Hora", "Liga", "Mandante", "Visitante", "GP", "GC",
-            "Over Mandante", "Over Visitante",  # Novas colunas
-            "Sugestão HT", "Sugestão FT"
+            "Hora", "Liga", "Mandante", "Visitante",
+            "Média HT", "GP HT", "GC HT",  # Média HT primeiro, depois GP HT e GC HT
+            "Média FT", "GP", "GC",  # Média FT primeiro, depois GP e GC
+            "Over Mandante", "Over Visitante",  # Colunas Over
+            "Sugestão HT", "Sugestão FT"  # Sugestões
         ]
-
         return df_clean, df_display[colunas_ao_vivo_solicitadas]
 
     except Exception as e:
         logger.error(f"Erro ao carregar dados ao vivo: {e}")
         st.error(f"❌ Erro ao carregar e processar dados ao vivo.")
         return pd.DataFrame(), pd.DataFrame()
-
 
 # ==============================================
 # FUNÇÕES AUXILIARES DE ANÁLISE
@@ -985,18 +1235,6 @@ def fifalgorithm_app():
         else:
             st.warning("⏳ Nenhuma partida ao vivo no momento")
 
-        # CSS personalizado
-        st.markdown("""
-        <style>
-            @media screen and (max-width: 768px) {
-                .ag-root-wrapper { width: 100vw !important; margin-left: -10px !important; }
-                .ag-header-cell-label { font-size: 12px !important; padding: 0 5px !important; }
-                .ag-cell { font-size: 12px !important; padding: 4px 2px !important; line-height: 1.2 !important; }
-                .hide-on-mobile { display: none !important; }
-            }
-        </style>
-        """, unsafe_allow_html=True)
-
         if not df_live_display.empty:
             # Configuração dos filtros na sidebar
             with st.sidebar:
@@ -1062,80 +1300,205 @@ def fifalgorithm_app():
             # Atualizar contador de jogos filtrados
             st.write(f"🔍 Mostrando {len(df_filtrado)} de {len(df_live_display)} jogos")
 
-            # Configuração da tabela interativa com AgGrid
-            gb = GridOptionsBuilder.from_dataframe(df_filtrado)
+            # ⭐⭐ TABELA COM AgGrid E COLUNAS SELECIONADAS ⭐⭐
 
-            # Configuração padrão com seleção múltipla de colunas
+            # ⭐⭐ TABELA COM FILTROS DE LISTA FUNCIONANDO ⭐⭐
+
+            # Aplicar estilos à tabela
+            styled_df = aplicar_estilos_tabela(df_filtrado)
+
+            # ⭐⭐ REMOVER COLUNAS INDESEJADAS ⭐⭐
+            colunas_para_remover = ['Tendência HT', 'Tendência FT', 'Melhor ⭐']
+            for coluna in colunas_para_remover:
+                if coluna in styled_df.columns:
+                    styled_df = styled_df.drop(columns=[coluna])
+
+            # ⭐⭐ MANTER APENAS AS COLUNAS ESSENCIAIS ⭐⭐
+            colunas_essenciais = [
+                "Hora", "Liga", "Mandante", "Visitante",
+                "Média HT", "GP HT", "GC HT",
+                "Média FT", "GP", "GC",
+                "Over Mandante", "Over Visitante",
+                "Sugestão HT", "Sugestão FT"
+            ]
+
+            # Filtrar apenas colunas que existem no DataFrame
+            colunas_finais = [col for col in colunas_essenciais if col in styled_df.columns]
+            styled_df = styled_df[colunas_finais]
+
+            # Configuração da tabela interativa com AgGrid
+            gb = GridOptionsBuilder.from_dataframe(styled_df)
+
+            # ⭐⭐ CONFIGURAR FILTROS ESPECÍFICOS PARA CADA TIPO DE COLUNA ⭐⭐
+            for coluna in styled_df.columns:
+                if styled_df[coluna].dtype in ['float64', 'int64']:
+                    # Colunas numéricas - filtro de números
+                    gb.configure_column(coluna,
+                                        filter='agNumberColumnFilter',
+                                        filterParams={
+                                            'buttons': ['apply', 'reset'],
+                                            'closeOnApply': True
+                                        })
+                else:
+                    # Colunas de texto - filtro de lista
+                    gb.configure_column(coluna,
+                                        filter='agSetColumnFilter',
+                                        filterParams={
+                                            'buttons': ['apply', 'reset'],
+                                            'closeOnApply': True,
+                                            'selectAllOnClear': True
+                                        })
+
+            # Configuração padrão
             gb.configure_default_column(
-                flex=1,
-                minWidth=100,
+                filterable=True,
+                sortable=True,
+                editable=False,
                 wrapText=True,
                 autoHeight=True,
-                editable=False,
-                filterable=True,
-                sortable=True
+                resizable=True,
+                minWidth=100,
+                maxWidth=180,
+                flex=1
             )
 
-            # Configurar coluna de seleção
-            gb.configure_selection(
-                selection_mode='multiple',
-                use_checkbox=True,
-                rowMultiSelectWithClick=True
-            )
+            # Configurar larguras específicas
+            gb.configure_column("Hora", width=80)
+            gb.configure_column("Liga", width=120)
+            gb.configure_column("Mandante", width=160)
+            gb.configure_column("Visitante", width=160)
+            gb.configure_column("Média HT", width=90)
+            gb.configure_column("GP HT", width=80)
+            gb.configure_column("GC HT", width=80)
+            gb.configure_column("Média FT", width=90)
+            gb.configure_column("GP", width=80)
+            gb.configure_column("GC", width=80)
+            gb.configure_column("Over Mandante", width=140)
+            gb.configure_column("Over Visitante", width=140)
+            gb.configure_column("Sugestão HT", width=120)
+            gb.configure_column("Sugestão FT", width=120)
 
-            # Configurar todas as colunas como filtros
-            for col in df_filtrado.columns:
-                gb.configure_column(col, header_name=col, filter=True)
+            # Configuração mínima de seleção
+            gb.configure_selection(selection_mode="single", use_checkbox=False)
 
             grid_options = gb.build()
 
-            # Renderizar tabela
-            grid_response = AgGrid(
-                df_filtrado,
-                gridOptions=grid_options,
-                height=min(600, 35 + 35 * len(df_filtrado)),
-                width='100%',
-                fit_columns_on_grid_load=False,
-                theme='streamlit',
-                update_mode=GridUpdateMode.MODEL_CHANGED,
-                allow_unsafe_jscode=True,
-                enable_enterprise_modules=True,
-                custom_css={
-                    "#gridToolBar": {
-                        "padding-bottom": "0px !important",
-                    }
+            # ⭐⭐ CSS PARA MOSTRAR OS FILTROS CORRETAMENTE ⭐⭐
+            st.markdown("""
+            <style>
+                .ag-set-filter-list {
+                    max-height: 300px !important;
+                    overflow-y: auto !important;
                 }
+                .ag-set-filter-item {
+                    padding: 6px 10px !important;
+                    font-size: 12px !important;
+                }
+                .ag-filter-toolpanel-header {
+                    font-size: 12px !important;
+                    font-weight: bold !important;
+                }
+                /* Container principal mais largo */
+                .main .block-container {
+                    max-width: 95% !important;
+                    padding-left: 2.5% !important;
+                    padding-right: 2.5% !important;
+                }
+                /* Tabela mais larga */
+                .ag-theme-streamlit {
+                    font-size: 13px !important;
+                    width: 100% !important;
+                }
+                .ag-header-cell {
+                    font-size: 12px !important;
+                    font-weight: bold !important;
+                    background-color: #2C2C2C !important;
+                    color: #00FF88 !important;
+                    padding: 6px !important;
+                }
+                .ag-cell {
+                    font-size: 12px !important;
+                    padding: 6px 8px !important;
+                    line-height: 1.3 !important;
+                }
+                .ag-row {
+                    border-bottom: 1px solid #444 !important;
+                    height: 35px !important;
+                }
+                .ag-row:hover {
+                    background-color: #2A2A2A !important;
+                }
+                .ag-header {
+                    border-bottom: 2px solid #00FF88 !important;
+                    height: 40px !important;
+                }
+                /* Ajustar altura da tabela */
+                .ag-root-wrapper {
+                    height: 600px !important;
+                    min-height: 500px !important;
+                    width: 100% !important;
+                }
+            </style>
+            """, unsafe_allow_html=True)
+
+            # ⭐⭐ EXIBIR TABELA COM FILTROS DE LISTA ⭐⭐
+            grid_response = AgGrid(
+                styled_df,
+                gridOptions=grid_options,
+                height=600,
+                width='100%',
+                theme='streamlit',
+                update_mode=GridUpdateMode.SELECTION_CHANGED,
+                allow_unsafe_jscode=True,
+                enable_enterprise_modules=True,  # ⚠️ IMPORTANTE: PRECISA SER True
+                fit_columns_on_grid_load=False,
             )
 
-            # Botão de salvamento
-            if st.button("💾 Salvar Jogos Selecionados", type="primary"):
-                selected_rows = grid_response['selected_rows']
-                if not selected_rows.empty:  # Verifica se o DataFrame não está vazio
-                    selected_df = pd.DataFrame(selected_rows)
-                    # Adiciona data de salvamento
-                    selected_df['Data Salvamento'] = datetime.now().strftime("%d/%m/%Y %H:%M")
+            # Exibir contador final com estilo
+            st.success(f"📊 **Total de Jogos:** {len(styled_df)}")
 
-                    # Atualiza jogos salvos
-                    if 'saved_games' not in st.session_state:
-                        st.session_state.saved_games = selected_df
-                    else:
-                        # Evita duplicatas
-                        existing_games = st.session_state.saved_games
-                        mask = selected_df.apply(
-                            lambda row: ~((existing_games['Mandante'] == row['Mandante']) &
-                                          (existing_games['Visitante'] == row['Visitante']) &
-                                          (existing_games['Hora'] == row['Hora'])).any(),
-                            axis=1
-                        )
-                        new_games = selected_df[mask]
+            # ⭐⭐ BOTÃO DE SALVAMENTO GRANDE ⭐⭐
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("💾 SALVAR TODOS OS JOGOS", type="primary",
+                             use_container_width=True, key="save_big_button"):
+                    if not styled_df.empty:
+                        selected_df = styled_df.copy()
+                        # Adiciona data de salvamento
+                        selected_df['Data Salvamento'] = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-                        if not new_games.empty:
-                            st.session_state.saved_games = pd.concat([existing_games, new_games])
-                            st.success(f"✅ {len(new_games)} novos jogos salvos!")
+                        # Atualiza jogos salvos
+                        if 'saved_games' not in st.session_state:
+                            st.session_state.saved_games = selected_df
+                            st.success(f"✅ {len(selected_df)} jogos salvos!")
                         else:
-                            st.warning("Nenhum jogo novo para salvar (todos já estão na lista)")
-                else:
-                    st.warning("Nenhum jogo selecionado")
+                            # Evita duplicatas
+                            existing_games = st.session_state.saved_games
+
+                            # Verifica duplicatas por Hora, Mandante e Visitante
+                            def ja_existe(novo_jogo):
+                                for _, existente in existing_games.iterrows():
+                                    if (existente['Hora'] == novo_jogo['Hora'] and
+                                            existente['Mandante'] == novo_jogo['Mandante'] and
+                                            existente['Visitante'] == novo_jogo['Visitante']):
+                                        return True
+                                return False
+
+                            # Filtra apenas jogos novos
+                            novos_jogos = []
+                            for _, novo_jogo in selected_df.iterrows():
+                                if not ja_existe(novo_jogo):
+                                    novos_jogos.append(novo_jogo)
+
+                            if novos_jogos:
+                                novos_jogos_df = pd.DataFrame(novos_jogos)
+                                st.session_state.saved_games = pd.concat([existing_games, novos_jogos_df],
+                                                                         ignore_index=True)
+                                st.success(f"✅ {len(novos_jogos)} novos jogos salvos!")
+                            else:
+                                st.warning("Nenhum jogo novo para salvar (todos já estão na lista)")
+                    else:
+                        st.warning("Nenhum jogo para salvar")
 
     # ==============================================
     # ABA 2: RADAR FIFA - ATUALIZADO
