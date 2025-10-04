@@ -32,11 +32,12 @@ DATA_DIR.mkdir(exist_ok=True)
 
 KEYS_FILE = DATA_DIR / "keys.json"
 USAGE_FILE = DATA_DIR / "usage.json"
+SALES_FILE = DATA_DIR / "sales.json"
 
 # Configurações de pagamento PIX
-PIX_CPF = "01905990065"
-WHATSAPP_NUM = "49991663166"  # Número sem código do país
-PIX_AMOUNT = 9.90
+PIX_CPF = "01905990065"  # Seu CPF como chave PIX
+WHATSAPP_NUM = "5549991663166"  # Seu WhatsApp com código do país
+WHATSAPP_MSG = "Olá! Envio comprovante do FIFAlgorithm"
 
 # Configuração de log
 logging.basicConfig(level=logging.INFO)
@@ -56,425 +57,16 @@ COMPETICOES_PERMITIDAS = {
 }
 
 # Variável global para controle de atualização
-UPDATE_INTERVAL = 300
+UPDATE_INTERVAL = 300  # 5 minutos em segundos
 last_update_time = time.time()
 
 # ==============================================
-# SISTEMA DE AUTENTICAÇÃO
-# ==============================================
-
-# Configurações de acesso
-SENHA_TESTE = "bl2205"
-ACESSO_TESTE_ATIVO = True  # Você controla isso via painel admin
-
-
-# Dicionário para armazenar acessos 24h
-def carregar_acessos_24h():
-    """Carrega os acessos 24h do arquivo"""
-    try:
-        if KEYS_FILE.exists():
-            with open(KEYS_FILE, 'r') as f:
-                return json.load(f)
-        return {}
-    except:
-        return {}
-
-
-def salvar_acessos_24h(acessos):
-    """Salva os acessos 24h no arquivo"""
-    try:
-        with open(KEYS_FILE, 'w') as f:
-            json.dump(acessos, f, indent=4)
-    except Exception as e:
-        logger.error(f"Erro ao salvar acessos: {e}")
-
-
-def gerar_codigo_24h():
-    """Gera um código único de 8 caracteres"""
-    return hashlib.sha256(f"{datetime.now()}{os.urandom(8)}".encode()).hexdigest()[:8].upper()
-
-
-def criar_acesso_24h():
-    """Cria um novo acesso de 24 horas"""
-    codigo = gerar_codigo_24h()
-    data_expiracao = (datetime.now() + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-
-    acessos = carregar_acessos_24h()
-    acessos[codigo] = {
-        "codigo": codigo,
-        "data_criacao": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "data_expiracao": data_expiracao,
-        "status": "ativo"
-    }
-
-    salvar_acessos_24h(acessos)
-    return codigo
-
-
-def validar_acesso_24h(codigo):
-    """Valida se o código de 24h é válido"""
-    acessos = carregar_acessos_24h()
-
-    if codigo in acessos:
-        dados = acessos[codigo]
-        data_expiracao = datetime.strptime(dados["data_expiracao"], "%Y-%m-%d %H:%M:%S")
-
-        if datetime.now() < data_expiracao and dados.get("status") == "ativo":
-            return True, dados
-        else:
-            # Remove código expirado
-            del acessos[codigo]
-            salvar_acessos_24h(acessos)
-
-    return False, None
-
-
-def revogar_acesso_24h(codigo):
-    """Revoga um acesso 24h"""
-    acessos = carregar_acessos_24h()
-    if codigo in acessos:
-        acessos[codigo]["status"] = "revogado"
-        salvar_acessos_24h(acessos)
-        return True
-    return False
-
-
-# ==============================================
-# TELA DE LOGIN COMPLETA
-# ==============================================
-
-def tela_login():
-    """Tela de login com dois tipos de acesso"""
-    st.set_page_config(
-        page_title="FIFAlgorithm - Acesso",
-        layout="centered"
-    )
-
-    st.markdown("""
-    <style>
-    .login-container {
-        background: linear-gradient(135deg, #0f0f2e 0%, #1a1a3e 100%);
-        padding: 30px;
-        border-radius: 20px;
-        border: 2px solid rgba(100, 150, 255, 0.3);
-        max-width: 500px;
-        margin: 30px auto;
-    }
-    .acesso-card {
-        background: rgba(255,255,255,0.1);
-        padding: 20px;
-        border-radius: 15px;
-        margin: 15px 0;
-        border-left: 4px solid #4CAF50;
-    }
-    .premium-card {
-        background: linear-gradient(135deg, #FFD700, #FFA500);
-        color: black;
-        padding: 20px;
-        border-radius: 15px;
-        margin: 15px 0;
-        border: 2px solid rgba(255,255,255,0.3);
-    }
-    .pix-section {
-        background: rgba(255,255,255,0.1);
-        padding: 15px;
-        border-radius: 10px;
-        margin: 15px 0;
-        border-left: 4px solid #32CD32;
-    }
-    .admin-panel {
-        background: rgba(255,0,0,0.1);
-        padding: 15px;
-        border-radius: 10px;
-        margin: 15px 0;
-        border-left: 4px solid #FF0000;
-    }
-    .step-box {
-        background: rgba(255,255,255,0.05);
-        padding: 15px;
-        border-radius: 10px;
-        margin: 10px 0;
-        text-align: center;
-    }
-    @media (max-width: 768px) {
-        .login-container {
-            padding: 20px;
-            margin: 20px 10px;
-        }
-        .step-box {
-            padding: 10px;
-            margin: 8px 0;
-        }
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    # Container principal
-    st.markdown("""
-    <div class="login-container">
-        <div style='text-align: center; margin-bottom: 25px;'>
-            <h1 style='color: white; margin-bottom: 10px; font-size: 1.8rem;'>🦅 FIFAlgorithm</h1>
-            <p style='color: #e0e0e0; font-size: 0.9rem;'>Sistema Profissional de Análise E-soccer</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Abas para diferentes tipos de acesso
-    tab1, tab2 = st.tabs(["🔐 Acesso Teste", "💎 Acesso 24h - R$20,00"])
-
-    with tab1:
-        st.markdown("### Acesso Teste Gratuito")
-
-        if not ACESSO_TESTE_ATIVO:
-            st.error("🚫 Acesso teste temporariamente desativado pelo administrador")
-        else:
-            st.markdown("""
-            <div class="acesso-card">
-                <h4 style='margin: 0;'>🎯 Acesso Imediato</h4>
-                <p style='margin: 5px 0 0 0; font-size: 0.9rem;'>Teste todas as funcionalidades do sistema</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-            senha = st.text_input("**Senha de teste:**", type="password",
-                                  placeholder="Digite a senha de teste...",
-                                  key="senha_teste")
-
-            if st.button("🚀 ACESSAR TESTE", use_container_width=True):
-                if senha == SENHA_TESTE:
-                    st.session_state.authenticated = True
-                    st.session_state.tipo_acesso = "teste"
-                    st.success("✅ Acesso teste liberado!")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("❌ Senha incorreta!")
-
-    with tab2:
-        st.markdown("### 💎 Acesso Premium 24h")
-
-        st.markdown("""
-        <div class="premium-card">
-            <h3 style='margin: 0 0 10px 0;'>🚀 ACESSO COMPLETO 24H</h3>
-            <h2 style='margin: 0;'>R$ 20,00</h2>
-            <p style='margin: 10px 0 0 0; font-size: 0.9rem;'>✅ Todas as funcionalidades liberadas por 24 horas</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Processo de compra simplificado para mobile
-        st.markdown("#### 📋 Como Funciona:")
-
-        st.markdown("""
-        <div class="step-box">
-            <strong>1️⃣ Pague o PIX</strong>
-            <p style='margin: 5px 0 0 0; font-size: 0.8rem;'>Chave: <strong>01905990065</strong></p>
-            <p style='margin: 0; font-size: 0.8rem;'>Valor: <strong>R$ 20,00</strong></p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("""
-        <div class="step-box">
-            <strong>2️⃣ Envie Comprovante</strong>
-            <p style='margin: 5px 0 0 0; font-size: 0.8rem;'>Via WhatsApp para:</p>
-            <p style='margin: 0; font-size: 0.8rem;'><strong>49991663166</strong></p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("""
-        <div class="step-box">
-            <strong>3️⃣ Receba o Código</strong>
-            <p style='margin: 5px 0 0 0; font-size: 0.8rem;'>Acesso imediato por 24h</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Seção PIX simplificada
-        st.markdown("---")
-        st.markdown("#### 💰 Dados PIX")
-
-        st.markdown(f"""
-        <div class="pix-section">
-            <div style='text-align: center;'>
-                <h4 style='color: #4CAF50; margin: 0;'>Chave PIX (CPF):</h4>
-                <h3 style='color: #4CAF50; margin: 10px 0;'>{PIX_CPF}</h3>
-
-                <h4 style='margin: 15px 0 5px 0;'>Valor:</h4>
-                <h3 style='color: #4CAF50; margin: 0;'>R$ {PIX_AMOUNT}</h3>
-
-                <p style='margin: 15px 0 5px 0;'><strong>Beneficiário:</strong></p>
-                <p style='margin: 0;'><strong>FIFALGORITHM</strong></p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Botão WhatsApp otimizado para mobile
-        mensagem_whatsapp = f"Olá! Acabei de fazer o PIX de R$ {PIX_AMOUNT} para acesso 24h ao FIFAlgorithm."
-        whatsapp_url = f"https://wa.me/55{WHATSAPP_NUM}?text={requests.utils.quote(mensagem_whatsapp)}"
-
-        st.markdown(f"""
-        <a href="{whatsapp_url}" target="_blank" style='
-            background: linear-gradient(135deg, #25D366, #128C7E); 
-            color: white; 
-            padding: 12px 20px; 
-            border-radius: 10px; 
-            text-decoration: none; 
-            font-weight: bold; 
-            display: block; 
-            text-align: center;
-            margin: 20px 0;
-            font-size: 1rem;
-        '>
-            📱 ENVIAR COMPROVANTE NO WHATSAPP
-        </a>
-        """, unsafe_allow_html=True)
-
-        # Área para digitar código de acesso
-        st.markdown("---")
-        st.markdown("#### 🔑 Já tem seu código de acesso?")
-
-        codigo_acesso = st.text_input("**Código de acesso 24h:**",
-                                      placeholder="Digite o código recebido...",
-                                      key="codigo_24h").upper()
-
-        if st.button("🚀 ATIVAR ACESSO 24H", use_container_width=True):
-            if codigo_acesso:
-                valido, dados_acesso = validar_acesso_24h(codigo_acesso)
-
-                if valido:
-                    st.session_state.authenticated = True
-                    st.session_state.tipo_acesso = "premium_24h"
-                    st.session_state.codigo_acesso = codigo_acesso
-                    st.session_state.data_expiracao = dados_acesso["data_expiracao"]
-
-                    st.success("✅ Acesso premium ativado por 24 horas!")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("❌ Código inválido ou expirado!")
-            else:
-                st.warning("⚠️ Digite o código de acesso")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # Área administrativa OTIMIZADA PARA MOBILE
-    with st.expander("🔧 PAINEL ADMINISTRATIVO (Mobile)"):
-        st.markdown("### 🛠 Controle de Acessos")
-
-        # Status atual em cards otimizados para mobile
-        col1, col2 = st.columns(2)
-        with col1:
-            status_teste = "✅ ATIVO" if ACESSO_TESTE_ATIVO else "🚫 BLOQUEADO"
-            st.metric("Acesso Teste", status_teste)
-
-        with col2:
-            acessos_24h = carregar_acessos_24h()
-            acessos_ativos = [k for k, v in acessos_24h.items()
-                              if v.get("status") == "ativo" and
-                              datetime.now() < datetime.strptime(v["data_expiracao"], "%Y-%m-%d %H:%M:%S")]
-            st.metric("Acessos 24h Ativos", len(acessos_ativos))
-
-        # Controles do admin OTIMIZADOS PARA MOBILE
-        st.markdown("#### ⚡ Controles Rápidos")
-
-        # Botão único para gerar código (mais fácil no mobile)
-        if st.button("🎫 GERAR NOVO CÓDIGO 24h", use_container_width=True):
-            novo_codigo = criar_acesso_24h()
-            st.success(f"✅ **Código gerado:** `{novo_codigo}`")
-            st.info("📋 **Copie e envie para o cliente:**")
-            st.code(novo_codigo)
-
-            # Mensagem pronta para WhatsApp
-            mensagem_cliente = f"Seu código de acesso FIFAlgorithm é: {novo_codigo}\n\nAcesso válido por 24 horas. Use na aba 'Acesso 24h'."
-            whatsapp_cliente_url = f"https://wa.me/55{WHATSAPP_NUM}?text={requests.utils.quote(mensagem_cliente)}"
-
-            st.markdown(f"""
-            <a href="{whatsapp_cliente_url}" target="_blank" style='
-                background: linear-gradient(135deg, #25D366, #128C7E); 
-                color: white; 
-                padding: 10px 15px; 
-                border-radius: 8px; 
-                text-decoration: none; 
-                font-weight: bold; 
-                display: block; 
-                text-align: center;
-                margin: 10px 0;
-                font-size: 0.9rem;
-            '>
-                📤 ENVIAR CÓDIGO VIA WHATSAPP
-            </a>
-            """, unsafe_allow_html=True)
-
-        # Listar e gerenciar acessos 24h OTIMIZADO PARA MOBILE
-        st.markdown("#### 📋 Acessos 24h Ativos")
-
-        acessos = carregar_acessos_24h()
-        acessos_ativos = []
-
-        for codigo, dados in acessos.items():
-            if dados.get("status") == "ativo":
-                data_expiracao = datetime.strptime(dados["data_expiracao"], "%Y-%m-%d %H:%M:%S")
-                if datetime.now() < data_expiracao:
-                    tempo_restante = data_expiracao - datetime.now()
-                    horas = int(tempo_restante.total_seconds() // 3600)
-                    minutos = int((tempo_restante.total_seconds() % 3600) // 60)
-                    acessos_ativos.append({
-                        "codigo": codigo,
-                        "criacao": dados["data_criacao"],
-                        "expira": dados["data_expiracao"],
-                        "restante": f"{horas}h {minutos}m"
-                    })
-
-        if acessos_ativos:
-            for acesso in acessos_ativos:
-                # Layout otimizado para mobile
-                st.markdown(f"**Código:** `{acesso['codigo']}`")
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    st.write(f"⏳ {acesso['restante']}")
-                with col2:
-                    if st.button("🗑️ Revogar", key=f"rev_{acesso['codigo']}", use_container_width=True):
-                        if revogar_acesso_24h(acesso["codigo"]):
-                            st.success("✅ Acesso revogado!")
-                            time.sleep(1)
-                            st.rerun()
-                st.markdown("---")
-        else:
-            st.info("📭 Nenhum acesso 24h ativo no momento")
-
-        # Instruções para controle do acesso teste
-        st.markdown("#### 🔒 Controle Acesso Teste")
-        st.info("""
-        **Para bloquear/liberar acesso teste:**
-
-        1. Mude `ACESSO_TESTE_ATIVO = True/False` no código
-        2. Faça deploy no Streamlit Cloud
-        3. O app reiniciará automaticamente
-        """)
-
-
-# ==============================================
-# CSS PERSONALIZADO - OTIMIZADO PARA MOBILE
+# CSS PERSONALIZADO - TEMA DARK MODERNO
 # ==============================================
 
 st.markdown("""
 <style>
-    /* CSS OTIMIZADO PARA MOBILE */
-    @media (max-width: 768px) {
-        .main-header h1 {
-            font-size: 1.5rem !important;
-        }
-        .main-header p {
-            font-size: 0.9rem !important;
-        }
-        div[data-testid="stDataFrame"] {
-            font-size: 0.8rem;
-        }
-        .live-indicator {
-            padding: 8px 15px;
-            font-size: 0.9rem;
-        }
-        .status-badge {
-            padding: 6px 12px;
-            font-size: 0.8rem;
-        }
-    }
+    /* TEMA DEEP SPACE PARA TABELA AO VIVO */
 
     /* Container da tabela ao vivo com efeito de estrelas */
     div[data-testid="stDataFrame"] {
@@ -508,9 +100,18 @@ st.markdown("""
     }
 
     @keyframes stars {
-        0% { transform: scale(1); opacity: 0.8; }
-        50% { transform: scale(1.5); opacity: 1; }
-        100% { transform: scale(1); opacity: 0.8; }
+        0% { 
+            transform: scale(1);
+            opacity: 0.8;
+        }
+        50% { 
+            transform: scale(1.5);
+            opacity: 1;
+        }
+        100% { 
+            transform: scale(1);
+            opacity: 0.8;
+        }
     }
 
     /* Tabela com fundo escuro espacial */
@@ -571,7 +172,7 @@ st.markdown("""
         border: 1px solid rgba(100, 150, 255, 0.3);
     }
 
-    /* Estilo para AgGrid */
+    /* Estilo para AgGrid (se estiver usando) */
     .ag-theme-streamlit,
     .ag-theme-alpine {
         background: #000000 !important;
@@ -637,28 +238,12 @@ st.markdown("""
         50% { opacity: 0.7; }
         100% { opacity: 1; }
     }
-
-    /* Status badge */
-    .status-badge {
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-weight: bold;
-        text-align: center;
-    }
-    .status-test {
-        background: linear-gradient(135deg, #4CAF50, #45a049);
-        color: white;
-    }
-    .status-premium {
-        background: linear-gradient(135deg, #FFD700, #FFA500);
-        color: black;
-    }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ==============================================
-# FUNÇÕES DO FIFALGORITHM (MANTIDAS)
+# FUNÇÕES DO FIFALGORITHM (CORRIGIDAS)
 # ==============================================
 
 def requisicao_segura(url: str, timeout: int = 15) -> Optional[requests.Response]:
@@ -916,7 +501,7 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
 
         colunas_ao_vivo_solicitadas = [
             "Hora", "Liga", "Mandante", "Visitante", "GP", "GC",
-            "Over Mandante", "Over Visitante",
+            "Over Mandante", "Over Visitante",  # Novas colunas
             "Sugestão HT", "Sugestão FT"
         ]
 
@@ -929,10 +514,11 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
 
 
 # ==============================================
-# FUNÇÕES AUXILIARES (MANTIDAS)
+# FUNÇÕES AUXILIARES (MANTIDAS ORIGINAIS)
 # ==============================================
 
 def calcular_estatisticas_jogador(df: pd.DataFrame, jogador: str, liga: str) -> dict:
+    """Calcula estatísticas de um jogador em uma liga específica"""
     zeros = {
         "jogos_total": 0, "gols_marcados": 0, "gols_sofridos": 0,
         "gols_marcados_ht": 0, "gols_sofridos_ht": 0,
@@ -989,16 +575,34 @@ def calcular_estatisticas_jogador(df: pd.DataFrame, jogador: str, liga: str) -> 
 
 @st.cache_data(show_spinner=False, ttl=300)
 def calcular_estatisticas_todos_jogadores(df_resultados: pd.DataFrame) -> pd.DataFrame:
+    """Calcula estatísticas consolidadas para todos os jogadores"""
     if df_resultados.empty:
         return pd.DataFrame()
 
     jogador_stats = defaultdict(lambda: {
-        "jogos_total": 0, "vitorias": 0, "derrotas": 0, "empates": 0,
-        "gols_marcados": 0, "gols_sofridos": 0, "gols_marcados_ht": 0, "gols_sofridos_ht": 0,
-        "clean_sheets": 0, "over_05_ht_hits": 0, "over_15_ht_hits": 0, "over_25_ht_hits": 0,
-        "btts_ht_hits": 0, "over_05_ft_hits": 0, "over_15_ft_hits": 0, "over_25_ft_hits": 0,
-        "over_35_ft_hits": 0, "over_45_ft_hits": 0, "over_55_ft_hits": 0, "over_65_ft_hits": 0,
-        "btts_ft_hits": 0, "under_25_ft_hits": 0, "ligas_atuantes": set()
+        "jogos_total": 0,
+        "vitorias": 0,
+        "derrotas": 0,
+        "empates": 0,
+        "gols_marcados": 0,
+        "gols_sofridos": 0,
+        "gols_marcados_ht": 0,
+        "gols_sofridos_ht": 0,
+        "clean_sheets": 0,
+        "over_05_ht_hits": 0,
+        "over_15_ht_hits": 0,
+        "over_25_ht_hits": 0,
+        "btts_ht_hits": 0,
+        "over_05_ft_hits": 0,
+        "over_15_ft_hits": 0,
+        "over_25_ft_hits": 0,
+        "over_35_ft_hits": 0,
+        "over_45_ft_hits": 0,
+        "over_55_ft_hits": 0,
+        "over_65_ft_hits": 0,
+        "btts_ft_hits": 0,
+        "under_25_ft_hits": 0,
+        "ligas_atuantes": set()
     })
 
     for _, row in df_resultados.iterrows():
@@ -1094,7 +698,7 @@ def calcular_estatisticas_todos_jogadores(df_resultados: pd.DataFrame) -> pd.Dat
             jogador_stats[mandante]["btts_ft_hits"] += 1
             jogador_stats[visitante]["btts_ft_hits"] += 1
 
-    # Converter para DataFrame
+    # Converter para DataFrame e calcular percentuais/médias
     df_rankings_base = pd.DataFrame.from_dict(jogador_stats, orient="index")
     df_rankings_base.index.name = "Jogador"
     df_rankings_base = df_rankings_base.reset_index()
@@ -1102,49 +706,51 @@ def calcular_estatisticas_todos_jogadores(df_resultados: pd.DataFrame) -> pd.Dat
     # Calcula as métricas percentuais/médias
     df_rankings_base["Win Rate (%)"] = (df_rankings_base["vitorias"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Derrota Rate (%)"] = (
-                df_rankings_base["derrotas"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["derrotas"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Gols Marcados Média"] = (
-                df_rankings_base["gols_marcados"] / df_rankings_base["jogos_total"]).fillna(0)
+            df_rankings_base["gols_marcados"] / df_rankings_base["jogos_total"]).fillna(0)
     df_rankings_base["Gols Sofridos Média"] = (
-                df_rankings_base["gols_sofridos"] / df_rankings_base["jogos_total"]).fillna(0)
+            df_rankings_base["gols_sofridos"] / df_rankings_base["jogos_total"]).fillna(0)
     df_rankings_base["Saldo de Gols"] = df_rankings_base["gols_marcados"] - df_rankings_base["gols_sofridos"]
     df_rankings_base["Clean Sheets (%)"] = (
-                df_rankings_base["clean_sheets"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["clean_sheets"] / df_rankings_base["jogos_total"] * 100).fillna(0)
 
     # Percentuais de Overs e BTTS
     df_rankings_base["Over 0.5 HT (%)"] = (
-                df_rankings_base["over_05_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_05_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 1.5 HT (%)"] = (
-                df_rankings_base["over_15_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_15_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 2.5 HT (%)"] = (
-                df_rankings_base["over_25_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_25_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["BTTS HT (%)"] = (df_rankings_base["btts_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(
         0)
     df_rankings_base["Over 0.5 FT (%)"] = (
-                df_rankings_base["over_05_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_05_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 1.5 FT (%)"] = (
-                df_rankings_base["over_15_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_15_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 2.5 FT (%)"] = (
-                df_rankings_base["over_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 3.5 FT (%)"] = (
-                df_rankings_base["over_35_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_35_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 4.5 FT (%)"] = (
-                df_rankings_base["over_45_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_45_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 5.5 FT (%)"] = (
-                df_rankings_base["over_55_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_55_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 6.5 FT (%)"] = (
-                df_rankings_base["over_65_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["over_65_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["BTTS FT (%)"] = (df_rankings_base["btts_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(
         0)
     df_rankings_base["Under 2.5 FT (%)"] = (
-                df_rankings_base["under_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+            df_rankings_base["under_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
 
+    # Converte o set de ligas para string para exibição
     df_rankings_base["Ligas Atuantes"] = df_rankings_base["ligas_atuantes"].apply(lambda x: ", ".join(sorted(list(x))))
 
     return df_rankings_base
 
 
 def get_recent_player_stats(df_resultados: pd.DataFrame, player_name: str, num_games: int) -> dict:
+    """Calcula estatísticas para um jogador nas suas últimas N partidas"""
     player_games = df_resultados[
         (df_resultados["Mandante"] == player_name) | (df_resultados["Visitante"] == player_name)
         ].sort_values("Data", ascending=False).head(num_games).copy()
@@ -1153,12 +759,29 @@ def get_recent_player_stats(df_resultados: pd.DataFrame, player_name: str, num_g
         return {}
 
     stats = {
-        "jogos_recentes": len(player_games), "gols_marcados_ft": 0, "gols_sofridos_ft": 0,
-        "gols_marcados_ht": 0, "gols_sofridos_ht": 0, "over_05_ht_hits": 0, "over_15_ht_hits": 0,
-        "over_25_ht_hits": 0, "btts_ht_hits": 0, "over_05_ft_hits": 0, "over_15_ft_hits": 0,
-        "over_25_ft_hits": 0, "over_35_ft_hits": 0, "over_45_ft_hits": 0, "over_55_ft_hits": 0,
-        "over_65_ft_hits": 0, "btts_ft_hits": 0, "under_25_ft_hits": 0, "sequencia_vitorias": 0,
-        "sequencia_derrotas": 0, "sequencia_empates": 0, "sequencia_btts": 0, "sequencia_over_25_ft": 0
+        "jogos_recentes": len(player_games),
+        "gols_marcados_ft": 0,
+        "gols_sofridos_ft": 0,
+        "gols_marcados_ht": 0,
+        "gols_sofridos_ht": 0,
+        "over_05_ht_hits": 0,
+        "over_15_ht_hits": 0,
+        "over_25_ht_hits": 0,
+        "btts_ht_hits": 0,
+        "over_05_ft_hits": 0,
+        "over_15_ft_hits": 0,
+        "over_25_ft_hits": 0,
+        "over_35_ft_hits": 0,
+        "over_45_ft_hits": 0,
+        "over_55_ft_hits": 0,
+        "over_65_ft_hits": 0,
+        "btts_ft_hits": 0,
+        "under_25_ft_hits": 0,
+        "sequencia_vitorias": 0,
+        "sequencia_derrotas": 0,
+        "sequencia_empates": 0,
+        "sequencia_btts": 0,
+        "sequencia_over_25_ft": 0
     }
 
     last_result = None
@@ -1259,6 +882,7 @@ def get_recent_player_stats(df_resultados: pd.DataFrame, player_name: str, num_g
 
 
 def cor_icon(h_m, t_m, h_v, t_v) -> str:
+    """Retorna um ícone de cor com base nos percentuais de acerto"""
     pct_m = h_m / t_m if t_m else 0
     pct_v = h_v / t_v if t_v else 0
     if pct_m >= 0.70 and pct_v >= 0.70:
@@ -1269,11 +893,13 @@ def cor_icon(h_m, t_m, h_v, t_v) -> str:
 
 
 def format_stats(h_m, t_m, h_v, t_v) -> str:
+    """Formata estatísticas com ícones de cor"""
     icon = cor_icon(h_m, t_m, h_v, t_v)
     return f"{icon} {h_m}/{t_m}\n{h_v}/{t_v}"
 
 
 def format_gols_ht_com_icone_para_display(gols_ht_media: float) -> str:
+    """Formata a média de gols HT com ícone de cor"""
     if gols_ht_media >= 2.75:
         return f"🟢 {gols_ht_media:.2f}"
     elif 2.62 <= gols_ht_media <= 2.74:
@@ -1282,6 +908,7 @@ def format_gols_ht_com_icone_para_display(gols_ht_media: float) -> str:
 
 
 def sugerir_over_ht(media_gols_ht: float) -> str:
+    """Sugere um mercado Over HT com base na média de gols HT"""
     if media_gols_ht >= 2.75:
         return "Over 2.5 HT"
     elif media_gols_ht >= 2.20:
@@ -1293,6 +920,7 @@ def sugerir_over_ht(media_gols_ht: float) -> str:
 
 
 def sugerir_over_ft(media_gols_ft: float) -> str:
+    """Retorna a sugestão para Over FT com base na média de gols FT"""
     if media_gols_ft >= 6.70:
         return "Over 5.5 FT"
     elif media_gols_ft >= 5.70:
@@ -1314,6 +942,8 @@ def sugerir_over_ft(media_gols_ft: float) -> str:
 # ==============================================
 
 def start_auto_update():
+    """Inicia a thread de atualização automática"""
+
     def update_loop():
         while True:
             time.sleep(UPDATE_INTERVAL)
@@ -1327,6 +957,7 @@ def start_auto_update():
 
 
 def check_for_updates():
+    """Verifica se é hora de atualizar os dados"""
     global last_update_time
     current_time = time.time()
     if current_time - last_update_time >= UPDATE_INTERVAL:
@@ -1336,74 +967,30 @@ def check_for_updates():
 
 
 # ==============================================
-# APLICATIVO PRINCIPAL COM AUTENTICAÇÃO
+# INTERFACE PRINCIPAL DO APLICATIVO
 # ==============================================
 
 def fifalgorithm_app():
-    """Aplicativo principal com autenticação"""
-
-    # Verificar autenticação
-    if not st.session_state.get("authenticated", False):
-        tela_login()
-        return
-
-    # Verificar se acesso premium expirou
-    if st.session_state.get("tipo_acesso") == "premium_24h":
-        codigo = st.session_state.get("codigo_acesso")
-        if codigo:
-            valido, dados = validar_acesso_24h(codigo)
-            if not valido:
-                st.error("⏰ Seu acesso de 24h expirou!")
-                if st.button("🔄 Voltar ao Login"):
-                    st.session_state.authenticated = False
-                    st.rerun()
-                return
-
-    # Configurar página
+    """Aplicativo principal do FIFAlgorithm"""
     st.set_page_config(
-        page_title="FIFAlgorithm - Ao Vivo",
+        page_title="FIFAlgorithm",
         layout="wide",
         initial_sidebar_state="expanded",
     )
-
-    # Header com informações do acesso
-    col1, col2, col3 = st.columns([3, 1, 1])
-
-    with col1:
-        st.markdown("""
-        <div class="main-header">
-            <h1>🦅 FIFAlgorithm</h1>
-            <p>Análises Inteligentes de Partidas de E-soccer FIFA</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        tipo_acesso = st.session_state.get("tipo_acesso", "teste")
-        if tipo_acesso == "premium_24h":
-            st.markdown('<div class="status-badge status-premium">💎 PREMIUM 24H</div>', unsafe_allow_html=True)
-            # Mostrar tempo restante
-            codigo = st.session_state.get("codigo_acesso")
-            if codigo:
-                acessos = carregar_acessos_24h()
-                if codigo in acessos:
-                    data_expiracao = datetime.strptime(acessos[codigo]["data_expiracao"], "%Y-%m-%d %H:%M:%S")
-                    tempo_restante = data_expiracao - datetime.now()
-                    horas = int(tempo_restante.total_seconds() // 3600)
-                    minutos = int((tempo_restante.total_seconds() % 3600) // 60)
-                    st.write(f"⏳ {horas}h {minutos}m")
-        else:
-            st.markdown('<div class="status-badge status-test">🎯 ACESSO TESTE</div>', unsafe_allow_html=True)
-
-    with col3:
-        if st.button("🚪 Sair"):
-            st.session_state.authenticated = False
-            st.rerun()
 
     # Inicia a thread de atualização automática
     start_auto_update()
 
     brasil_timezone = pytz.timezone("America/Sao_Paulo")
     current_time_br = datetime.now(brasil_timezone).strftime("%H:%M:%S")
+
+    # Header personalizado com tema dark
+    st.markdown("""
+    <div class="main-header">
+        <h1>🦅 FIFAlgorithm</h1>
+        <p>Análises Inteligentes de Partidas de E-soccer FIFA</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     # Adiciona indicador de atualização automática
     if st.session_state.get("force_update", False):
@@ -1420,6 +1007,7 @@ def fifalgorithm_app():
 
     except Exception as e:
         st.error(f"Erro ao carregar dados: {str(e)}")
+        # Cria DataFrames vazios para evitar erros no resto do app
         df_resultados = pd.DataFrame()
         df_live_clean = pd.DataFrame()
         df_live_display = pd.DataFrame()
@@ -1428,10 +1016,11 @@ def fifalgorithm_app():
     # Sistema de abas
     tabs = st.tabs(["⚡️ Ao Vivo", "⭐️ Radar FIFA", "🧠 Alertas IA", "⚽️ Resultados"])
 
-    # Aba 1: Ao Vivo
+    # Aba 1: Ao Vivo - SEM MÉTRICAS mas com dados normais na tabela
     with tabs[0]:
         st.header("🔥 Buscar Jogos")
 
+        # Indicador de jogos ao vivo com animação
         if not df_live_display.empty:
             st.markdown(f"""
             <div class="live-indicator">
@@ -1442,9 +1031,11 @@ def fifalgorithm_app():
             st.warning("⏳ Nenhuma partida ao vivo no momento")
 
         if not df_live_display.empty:
+            # Filtros básicos na sidebar
             with st.sidebar:
                 st.subheader("🔍 Filtros Rápidos")
 
+                # Filtro por Liga
                 ligas_disponiveis = df_live_display['Liga'].unique()
                 ligas_selecionadas = st.multiselect(
                     'Selecione as Ligas:',
@@ -1452,47 +1043,17 @@ def fifalgorithm_app():
                     default=ligas_disponiveis
                 )
 
-                sugestoes_ht = df_live_display['Sugestão HT'].unique()
-                ht_selecionados = st.multiselect(
-                    'Sugestão HT:',
-                    options=sugestoes_ht,
-                    default=sugestoes_ht
-                )
-
-                sugestoes_ft = df_live_display['Sugestão FT'].unique()
-                ft_selecionados = st.multiselect(
-                    'Sugestão FT:',
-                    options=sugestoes_ft,
-                    default=sugestoes_ft
-                )
-
+            # Aplicar filtros
             df_filtrado = df_live_display[
-                (df_live_display['Liga'].isin(ligas_selecionadas)) &
-                (df_live_display['Sugestão HT'].isin(ht_selecionados)) &
-                (df_live_display['Sugestão FT'].isin(ft_selecionados))
-                ]
+                (df_live_display['Liga'].isin(ligas_selecionadas))
+            ]
 
-            if len(df_filtrado) > 0:
-                col1, col2, col3, col4 = st.columns(4)
+            # REMOVIDAS TODAS AS MÉTRICAS/ESTATÍSTICAS - vai direto para a tabela
 
-                with col1:
-                    ligas_count = df_filtrado['Liga'].nunique()
-                    st.metric("🎯 Ligas", ligas_count)
-
-                with col2:
-                    over_ht_count = len(df_filtrado[df_filtrado['Sugestão HT'] != 'Sem Entrada'])
-                    st.metric("⚡ Sug. HT", over_ht_count)
-
-                with col3:
-                    over_ft_count = len(df_filtrado[df_filtrado['Sugestão FT'] != 'Sem Entrada'])
-                    st.metric("🚀 Sug. FT", over_ft_count)
-
-                with col4:
-                    over_total = len(df_filtrado[df_filtrado['Over Mandante'] != '']) + len(
-                        df_filtrado[df_filtrado['Over Visitante'] != ''])
-                    st.metric("💎 Over Jogadores", over_total)
-
+            # Configuração da tabela COM DADOS NORMAIS
             gb = GridOptionsBuilder.from_dataframe(df_filtrado)
+
+            # Configuração para visualização normal (mantendo responsividade)
             gb.configure_default_column(
                 flex=1,
                 minWidth=80,
@@ -1505,23 +1066,41 @@ def fifalgorithm_app():
                 resizable=True
             )
 
+            # Colunas principais para exibição (TODAS AS COLUNAS ORIGINAIS)
             colunas_principais = [
-                "Hora", "Liga", "Mandante", "Visitante",
-                "GP", "GC", "Over Mandante", "Over Visitante",
-                "Sugestão HT", "Sugestão FT"
+                "Hora", "Liga", "Mandante", "Visitante", "GP", "GC",
+                "Over Mandante", "Over Visitante", "Sugestão HT", "Sugestão FT"
             ]
+
+            # Configurações específicas para cada coluna
+            config_colunas = {
+                "Hora": {"minWidth": 70, "maxWidth": 90},
+                "Liga": {"minWidth": 90, "maxWidth": 120},
+                "Mandante": {"minWidth": 100, "maxWidth": 140},
+                "Visitante": {"minWidth": 100, "maxWidth": 140},
+                "GP": {"minWidth": 60, "maxWidth": 80},
+                "GC": {"minWidth": 60, "maxWidth": 80},
+                "Over Mandante": {"minWidth": 110, "maxWidth": 150},
+                "Over Visitante": {"minWidth": 110, "maxWidth": 150},
+                "Sugestão HT": {"minWidth": 100, "maxWidth": 130},
+                "Sugestão FT": {"minWidth": 100, "maxWidth": 130},
+            }
 
             for col in colunas_principais:
                 if col in df_filtrado.columns:
-                    gb.configure_column(col,
-                                        minWidth=80 if col in ["Hora", "GP", "GC"] else 120,
-                                        maxWidth=150)
+                    config = config_colunas.get(col, {"minWidth": 80, "maxWidth": 120})
+                    gb.configure_column(col, **config)
 
-            gb.configure_selection(selection_mode='multiple', use_checkbox=True)
+            # Configurar seleção
+            gb.configure_selection(
+                selection_mode='multiple',
+                use_checkbox=True
+            )
+
             grid_options = gb.build()
 
-            st.markdown('<div class="table-container">', unsafe_allow_html=True)
-            height = min(800, 35 + 35 * len(df_filtrado))
+            # Renderizar tabela com altura dinâmica
+            height = min(600, 35 + 35 * len(df_filtrado))
 
             grid_response = AgGrid(
                 df_filtrado[colunas_principais],
@@ -1530,11 +1109,11 @@ def fifalgorithm_app():
                 width='100%',
                 theme='streamlit',
                 update_mode=GridUpdateMode.MODEL_CHANGED,
-                allow_unsafe_jscode=True
+                allow_unsafe_jscode=True,
+                fit_columns_on_grid_load=True
             )
 
-            st.markdown('</div>', unsafe_allow_html=True)
-
+            # Ações rápidas para seleção
             if grid_response['selected_rows']:
                 selected_count = len(grid_response['selected_rows'])
                 if st.button(f"📊 Analisar {selected_count} Jogos Selecionados", use_container_width=True):
@@ -1543,8 +1122,9 @@ def fifalgorithm_app():
     # Aba 2: Radar FIFA
     with tabs[1]:
         st.header("⭐️ Radar FIFA")
-        st.write("Indicador de Mercados Lucrativos por Liga em tempo Real.")
+        st.write(" Indicador de Mercados Lucrativos por Liga em tempo Real.")
 
+        # Critérios para o Radar FIFA
         CRITERIOS_HT = {
             "0.5 HT": {"min": 1.70, "max": float('inf')},
             "1.5 HT": {"min": 2.20, "max": float('inf')},
@@ -1636,7 +1216,7 @@ def fifalgorithm_app():
         else:
             st.info("Nenhum dado para o Radar FIFA.")
 
-    # Aba 3: Alertas IA
+    # Aba 3: Alertas IA - SIMPLIFICADA
     with tabs[2]:
         st.header("🧠 Alertas IA")
         st.write("Dicas inteligentes de Apostas para cada Partida")
@@ -1644,14 +1224,18 @@ def fifalgorithm_app():
         if df_live_clean.empty or df_resultados.empty:
             st.warning("Dados insuficientes para gerar alertas. Aguarde a atualização.")
         else:
+            # Configurações
             MIN_JOGOS_CONFRONTO = 5
             MIN_PORCENTAGEM = 75
 
+            # Obter hora atual
             brasil_tz = pytz.timezone('America/Sao_Paulo')
             hora_atual = datetime.now(brasil_tz).strftime("%H:%M")
 
+            # Processar jogos futuros
             df_live_futuro = df_live_clean[df_live_clean['Hora'] > hora_atual].sort_values('Hora', ascending=True)
 
+            # Resumo rápido
             st.subheader("📈 Resumo Executivo")
 
             col1, col2, col3 = st.columns(3)
@@ -1668,8 +1252,10 @@ def fifalgorithm_app():
             with col3:
                 st.metric("Critério Mínimo", f"{MIN_PORCENTAGEM}%")
 
+            # Botão para análise detalhada
             if st.button("🎯 Gerar Análise Detalhada", type="primary", use_container_width=True):
                 with st.spinner("Analisando confrontos diretos..."):
+                    # Lógica de análise simplificada
                     relatorios = []
 
                     for _, jogo in df_live_futuro.iterrows():
@@ -1678,29 +1264,33 @@ def fifalgorithm_app():
                         liga = jogo["Liga"]
                         hora_jogo = jogo["Hora"]
 
+                        # Filtrar jogos históricos entre esses jogadores
                         df_historico = df_resultados[
                             ((df_resultados["Mandante"] == p1) & (df_resultados["Visitante"] == p2)) |
                             ((df_resultados["Mandante"] == p2) & (df_resultados["Visitante"] == p1))
                             ]
 
                         if len(df_historico) >= MIN_JOGOS_CONFRONTO:
+                            # Análise básica de vitórias
                             p1_wins = len(df_historico[((df_historico["Mandante"] == p1) & (
-                                    df_historico["Mandante FT"] > df_historico["Visitante FT"])) |
+                                        df_historico["Mandante FT"] > df_historico["Visitante FT"])) |
                                                        ((df_historico["Visitante"] == p1) & (
-                                                               df_historico["Visitante FT"] > df_historico[
-                                                           "Mandante FT"]))])
+                                                                   df_historico["Visitante FT"] > df_historico[
+                                                               "Mandante FT"]))])
                             p1_win_rate = (p1_wins / len(df_historico)) * 100
 
                             p2_wins = len(df_historico[((df_historico["Mandante"] == p2) & (
-                                    df_historico["Mandante FT"] > df_historico["Visitante FT"])) |
+                                        df_historico["Mandante FT"] > df_historico["Visitante FT"])) |
                                                        ((df_historico["Visitante"] == p2) & (
-                                                               df_historico["Visitante FT"] > df_historico[
-                                                           "Mandante FT"]))])
+                                                                   df_historico["Visitante FT"] > df_historico[
+                                                               "Mandante FT"]))])
                             p2_win_rate = (p2_wins / len(df_historico)) * 100
 
+                            # Análise de Over 2.5 FT
                             over_25_hits = len(df_historico[df_historico["Total FT"] > 2.5])
                             over_25_rate = (over_25_hits / len(df_historico)) * 100
 
+                            # Adicionar oportunidades se atenderem aos critérios
                             if p1_win_rate >= MIN_PORCENTAGEM:
                                 relatorios.append({
                                     "Hora": hora_jogo,
@@ -1745,6 +1335,7 @@ def fifalgorithm_app():
                             height=400
                         )
 
+                        # Botão para exportar
                         csv = df_relatorios.to_csv(index=False).encode('utf-8')
                         st.download_button(
                             label="📥 Exportar Alertas",
@@ -1755,15 +1346,18 @@ def fifalgorithm_app():
                     else:
                         st.info("Nenhuma oportunidade encontrada com os critérios atuais.")
 
-            st.info("💡 **Dica:** Clique no botão acima para gerar analises com Alta Chances de Acertividades")
+            # Dica rápida
+            st.info(
+                "💡 **Dica:** Clique no botão acima para gerar analises com Alta Chances de Acertividades")
 
-    # Aba 4: Resultados
+    # Aba 4: Resultados - CORRIGIDA: Mostra dados HT também
     with tabs[3]:
         st.header("📊 Resultados Históricos")
 
         if df_resultados.empty:
             st.warning("Nenhum dado de resultados disponível no momento.")
         else:
+            # Filtro rápido
             col1, col2 = st.columns(2)
             with col1:
                 ligas_disponiveis = df_resultados['Liga'].unique()
@@ -1781,11 +1375,13 @@ def fifalgorithm_app():
                     step=10
                 )
 
+            # Aplicar filtros
             df_filtrado = df_resultados.copy()
             if liga_selecionada != 'Todas':
                 df_filtrado = df_filtrado[df_filtrado['Liga'] == liga_selecionada]
             df_filtrado = df_filtrado.sort_values('Data', ascending=False).head(num_jogos)
 
+            # Estatísticas resumidas - INCLUINDO DADOS HT
             if not df_filtrado.empty:
                 st.subheader("📈 Performance Geral")
 
@@ -1803,14 +1399,17 @@ def fifalgorithm_app():
                 cols[3].metric("Over 2.5 FT", f"{over_25_ft:.1f}%")
                 cols[4].metric("Over 1.5 HT", f"{over_15_ht:.1f}%")
 
+            # Tabela com dados HT e FT
             st.subheader("📋 Últimos Resultados")
 
+            # Colunas incluindo dados HT
             colunas_completas = [
                 'Data', 'Liga', 'Mandante', 'Visitante',
                 'Mandante HT', 'Visitante HT', 'Total HT',
                 'Mandante FT', 'Visitante FT', 'Total FT'
             ]
 
+            # Verificar quais colunas existem no DataFrame
             colunas_existentes = [col for col in colunas_completas if col in df_filtrado.columns]
 
             st.dataframe(
@@ -1819,6 +1418,7 @@ def fifalgorithm_app():
                 height=400
             )
 
+            # Botão para download
             csv = df_filtrado[colunas_existentes].to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Exportar Resultados",
@@ -1835,14 +1435,7 @@ def fifalgorithm_app():
 def main():
     """Função principal que controla o fluxo do aplicativo"""
     try:
-        # Inicializar session state
-        if "authenticated" not in st.session_state:
-            st.session_state.authenticated = False
-        if "tipo_acesso" not in st.session_state:
-            st.session_state.tipo_acesso = "teste"
-
         fifalgorithm_app()
-
     except Exception as e:
         st.error(f"Erro crítico no aplicativo: {str(e)}")
         st.info("Tente recarregar a página ou verificar sua conexão com a internet.")
