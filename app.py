@@ -32,12 +32,11 @@ DATA_DIR.mkdir(exist_ok=True)
 
 KEYS_FILE = DATA_DIR / "keys.json"
 USAGE_FILE = DATA_DIR / "usage.json"
-SALES_FILE = DATA_DIR / "sales.json"
 
 # Configurações de pagamento PIX
-PIX_CPF = "01905990065"  # Seu CPF como chave PIX
-WHATSAPP_NUM = "5549991663166"  # Seu WhatsApp com código do país
-WHATSAPP_MSG = "Olá! Envio comprovante do FIFAlgorithm"
+PIX_CPF = "01905990065"
+WHATSAPP_NUM = "49991663166"  # Número sem código do país
+PIX_AMOUNT = 9.90
 
 # Configuração de log
 logging.basicConfig(level=logging.INFO)
@@ -57,287 +56,609 @@ COMPETICOES_PERMITIDAS = {
 }
 
 # Variável global para controle de atualização
-UPDATE_INTERVAL = 300  # 5 minutos em segundos
+UPDATE_INTERVAL = 300
 last_update_time = time.time()
 
 # ==============================================
-# CSS PERSONALIZADO - TEMA DARK MODERNO
+# SISTEMA DE AUTENTICAÇÃO
+# ==============================================
+
+# Configurações de acesso
+SENHA_TESTE = "bl2205"
+ACESSO_TESTE_ATIVO = True  # Você controla isso via painel admin
+
+
+# Dicionário para armazenar acessos 24h
+def carregar_acessos_24h():
+    """Carrega os acessos 24h do arquivo"""
+    try:
+        if KEYS_FILE.exists():
+            with open(KEYS_FILE, 'r') as f:
+                return json.load(f)
+        return {}
+    except:
+        return {}
+
+
+def salvar_acessos_24h(acessos):
+    """Salva os acessos 24h no arquivo"""
+    try:
+        with open(KEYS_FILE, 'w') as f:
+            json.dump(acessos, f, indent=4)
+    except Exception as e:
+        logger.error(f"Erro ao salvar acessos: {e}")
+
+
+def gerar_codigo_24h():
+    """Gera um código único de 8 caracteres"""
+    return hashlib.sha256(f"{datetime.now()}{os.urandom(8)}".encode()).hexdigest()[:8].upper()
+
+
+def criar_acesso_24h():
+    """Cria um novo acesso de 24 horas"""
+    codigo = gerar_codigo_24h()
+    data_expiracao = (datetime.now() + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+
+    acessos = carregar_acessos_24h()
+    acessos[codigo] = {
+        "codigo": codigo,
+        "data_criacao": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "data_expiracao": data_expiracao,
+        "status": "ativo"
+    }
+
+    salvar_acessos_24h(acessos)
+    return codigo
+
+
+def validar_acesso_24h(codigo):
+    """Valida se o código de 24h é válido"""
+    acessos = carregar_acessos_24h()
+
+    if codigo in acessos:
+        dados = acessos[codigo]
+        data_expiracao = datetime.strptime(dados["data_expiracao"], "%Y-%m-%d %H:%M:%S")
+
+        if datetime.now() < data_expiracao and dados.get("status") == "ativo":
+            return True, dados
+        else:
+            # Remove código expirado
+            del acessos[codigo]
+            salvar_acessos_24h(acessos)
+
+    return False, None
+
+
+def revogar_acesso_24h(codigo):
+    """Revoga um acesso 24h"""
+    acessos = carregar_acessos_24h()
+    if codigo in acessos:
+        acessos[codigo]["status"] = "revogado"
+        salvar_acessos_24h(acessos)
+        return True
+    return False
+
+
+# ==============================================
+# TELA DE LOGIN COMPLETA
+# ==============================================
+
+def tela_login():
+    """Tela de login com dois tipos de acesso"""
+    st.set_page_config(
+        page_title="FIFAlgorithm - Acesso",
+        layout="centered"
+    )
+
+    st.markdown("""
+    <style>
+    .login-container {
+        background: linear-gradient(135deg, #0f0f2e 0%, #1a1a3e 100%);
+        padding: 30px;
+        border-radius: 20px;
+        border: 2px solid rgba(100, 150, 255, 0.3);
+        max-width: 500px;
+        margin: 30px auto;
+    }
+    .acesso-card {
+        background: rgba(255,255,255,0.1);
+        padding: 20px;
+        border-radius: 15px;
+        margin: 15px 0;
+        border-left: 4px solid #4CAF50;
+    }
+    .premium-card {
+        background: linear-gradient(135deg, #FFD700, #FFA500);
+        color: black;
+        padding: 20px;
+        border-radius: 15px;
+        margin: 15px 0;
+        border: 2px solid rgba(255,255,255,0.3);
+    }
+    .pix-section {
+        background: rgba(255,255,255,0.1);
+        padding: 15px;
+        border-radius: 10px;
+        margin: 15px 0;
+        border-left: 4px solid #32CD32;
+    }
+    .admin-panel {
+        background: rgba(255,0,0,0.1);
+        padding: 15px;
+        border-radius: 10px;
+        margin: 15px 0;
+        border-left: 4px solid #FF0000;
+    }
+    .step-box {
+        background: rgba(255,255,255,0.05);
+        padding: 15px;
+        border-radius: 10px;
+        margin: 10px 0;
+        text-align: center;
+    }
+    @media (max-width: 768px) {
+        .login-container {
+            padding: 20px;
+            margin: 20px 10px;
+        }
+        .step-box {
+            padding: 10px;
+            margin: 8px 0;
+        }
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Container principal
+    st.markdown("""
+    <div class="login-container">
+        <div style='text-align: center; margin-bottom: 25px;'>
+            <h1 style='color: white; margin-bottom: 10px; font-size: 1.8rem;'>🦅 FIFAlgorithm</h1>
+            <p style='color: #e0e0e0; font-size: 0.9rem;'>Sistema Profissional de Análise E-soccer</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Abas para diferentes tipos de acesso
+    tab1, tab2 = st.tabs(["🔐 Acesso Teste", "💎 Acesso 24h - R$20,00"])
+
+    with tab1:
+        st.markdown("### Acesso Teste Gratuito")
+
+        if not ACESSO_TESTE_ATIVO:
+            st.error("🚫 Acesso teste temporariamente desativado pelo administrador")
+        else:
+            st.markdown("""
+            <div class="acesso-card">
+                <h4 style='margin: 0;'>🎯 Acesso Imediato</h4>
+                <p style='margin: 5px 0 0 0; font-size: 0.9rem;'>Teste todas as funcionalidades do sistema</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            senha = st.text_input("**Senha de teste:**", type="password",
+                                  placeholder="Digite a senha de teste...",
+                                  key="senha_teste")
+
+            if st.button("🚀 ACESSAR TESTE", use_container_width=True):
+                if senha == SENHA_TESTE:
+                    st.session_state.authenticated = True
+                    st.session_state.tipo_acesso = "teste"
+                    st.success("✅ Acesso teste liberado!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("❌ Senha incorreta!")
+
+    with tab2:
+        st.markdown("### 💎 Acesso Premium 24h")
+
+        st.markdown("""
+        <div class="premium-card">
+            <h3 style='margin: 0 0 10px 0;'>🚀 ACESSO COMPLETO 24H</h3>
+            <h2 style='margin: 0;'>R$ 20,00</h2>
+            <p style='margin: 10px 0 0 0; font-size: 0.9rem;'>✅ Todas as funcionalidades liberadas por 24 horas</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Processo de compra simplificado para mobile
+        st.markdown("#### 📋 Como Funciona:")
+
+        st.markdown("""
+        <div class="step-box">
+            <strong>1️⃣ Pague o PIX</strong>
+            <p style='margin: 5px 0 0 0; font-size: 0.8rem;'>Chave: <strong>01905990065</strong></p>
+            <p style='margin: 0; font-size: 0.8rem;'>Valor: <strong>R$ 20,00</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div class="step-box">
+            <strong>2️⃣ Envie Comprovante</strong>
+            <p style='margin: 5px 0 0 0; font-size: 0.8rem;'>Via WhatsApp para:</p>
+            <p style='margin: 0; font-size: 0.8rem;'><strong>49991663166</strong></p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div class="step-box">
+            <strong>3️⃣ Receba o Código</strong>
+            <p style='margin: 5px 0 0 0; font-size: 0.8rem;'>Acesso imediato por 24h</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Seção PIX simplificada
+        st.markdown("---")
+        st.markdown("#### 💰 Dados PIX")
+
+        st.markdown(f"""
+        <div class="pix-section">
+            <div style='text-align: center;'>
+                <h4 style='color: #4CAF50; margin: 0;'>Chave PIX (CPF):</h4>
+                <h3 style='color: #4CAF50; margin: 10px 0;'>{PIX_CPF}</h3>
+
+                <h4 style='margin: 15px 0 5px 0;'>Valor:</h4>
+                <h3 style='color: #4CAF50; margin: 0;'>R$ {PIX_AMOUNT}</h3>
+
+                <p style='margin: 15px 0 5px 0;'><strong>Beneficiário:</strong></p>
+                <p style='margin: 0;'><strong>FIFALGORITHM</strong></p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Botão WhatsApp otimizado para mobile
+        mensagem_whatsapp = f"Olá! Acabei de fazer o PIX de R$ {PIX_AMOUNT} para acesso 24h ao FIFAlgorithm."
+        whatsapp_url = f"https://wa.me/55{WHATSAPP_NUM}?text={requests.utils.quote(mensagem_whatsapp)}"
+
+        st.markdown(f"""
+        <a href="{whatsapp_url}" target="_blank" style='
+            background: linear-gradient(135deg, #25D366, #128C7E); 
+            color: white; 
+            padding: 12px 20px; 
+            border-radius: 10px; 
+            text-decoration: none; 
+            font-weight: bold; 
+            display: block; 
+            text-align: center;
+            margin: 20px 0;
+            font-size: 1rem;
+        '>
+            📱 ENVIAR COMPROVANTE NO WHATSAPP
+        </a>
+        """, unsafe_allow_html=True)
+
+        # Área para digitar código de acesso
+        st.markdown("---")
+        st.markdown("#### 🔑 Já tem seu código de acesso?")
+
+        codigo_acesso = st.text_input("**Código de acesso 24h:**",
+                                      placeholder="Digite o código recebido...",
+                                      key="codigo_24h").upper()
+
+        if st.button("🚀 ATIVAR ACESSO 24H", use_container_width=True):
+            if codigo_acesso:
+                valido, dados_acesso = validar_acesso_24h(codigo_acesso)
+
+                if valido:
+                    st.session_state.authenticated = True
+                    st.session_state.tipo_acesso = "premium_24h"
+                    st.session_state.codigo_acesso = codigo_acesso
+                    st.session_state.data_expiracao = dados_acesso["data_expiracao"]
+
+                    st.success("✅ Acesso premium ativado por 24 horas!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("❌ Código inválido ou expirado!")
+            else:
+                st.warning("⚠️ Digite o código de acesso")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Área administrativa OTIMIZADA PARA MOBILE
+    with st.expander("🔧 PAINEL ADMINISTRATIVO (Mobile)"):
+        st.markdown("### 🛠 Controle de Acessos")
+
+        # Status atual em cards otimizados para mobile
+        col1, col2 = st.columns(2)
+        with col1:
+            status_teste = "✅ ATIVO" if ACESSO_TESTE_ATIVO else "🚫 BLOQUEADO"
+            st.metric("Acesso Teste", status_teste)
+
+        with col2:
+            acessos_24h = carregar_acessos_24h()
+            acessos_ativos = [k for k, v in acessos_24h.items()
+                              if v.get("status") == "ativo" and
+                              datetime.now() < datetime.strptime(v["data_expiracao"], "%Y-%m-%d %H:%M:%S")]
+            st.metric("Acessos 24h Ativos", len(acessos_ativos))
+
+        # Controles do admin OTIMIZADOS PARA MOBILE
+        st.markdown("#### ⚡ Controles Rápidos")
+
+        # Botão único para gerar código (mais fácil no mobile)
+        if st.button("🎫 GERAR NOVO CÓDIGO 24h", use_container_width=True):
+            novo_codigo = criar_acesso_24h()
+            st.success(f"✅ **Código gerado:** `{novo_codigo}`")
+            st.info("📋 **Copie e envie para o cliente:**")
+            st.code(novo_codigo)
+
+            # Mensagem pronta para WhatsApp
+            mensagem_cliente = f"Seu código de acesso FIFAlgorithm é: {novo_codigo}\n\nAcesso válido por 24 horas. Use na aba 'Acesso 24h'."
+            whatsapp_cliente_url = f"https://wa.me/55{WHATSAPP_NUM}?text={requests.utils.quote(mensagem_cliente)}"
+
+            st.markdown(f"""
+            <a href="{whatsapp_cliente_url}" target="_blank" style='
+                background: linear-gradient(135deg, #25D366, #128C7E); 
+                color: white; 
+                padding: 10px 15px; 
+                border-radius: 8px; 
+                text-decoration: none; 
+                font-weight: bold; 
+                display: block; 
+                text-align: center;
+                margin: 10px 0;
+                font-size: 0.9rem;
+            '>
+                📤 ENVIAR CÓDIGO VIA WHATSAPP
+            </a>
+            """, unsafe_allow_html=True)
+
+        # Listar e gerenciar acessos 24h OTIMIZADO PARA MOBILE
+        st.markdown("#### 📋 Acessos 24h Ativos")
+
+        acessos = carregar_acessos_24h()
+        acessos_ativos = []
+
+        for codigo, dados in acessos.items():
+            if dados.get("status") == "ativo":
+                data_expiracao = datetime.strptime(dados["data_expiracao"], "%Y-%m-%d %H:%M:%S")
+                if datetime.now() < data_expiracao:
+                    tempo_restante = data_expiracao - datetime.now()
+                    horas = int(tempo_restante.total_seconds() // 3600)
+                    minutos = int((tempo_restante.total_seconds() % 3600) // 60)
+                    acessos_ativos.append({
+                        "codigo": codigo,
+                        "criacao": dados["data_criacao"],
+                        "expira": dados["data_expiracao"],
+                        "restante": f"{horas}h {minutos}m"
+                    })
+
+        if acessos_ativos:
+            for acesso in acessos_ativos:
+                # Layout otimizado para mobile
+                st.markdown(f"**Código:** `{acesso['codigo']}`")
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.write(f"⏳ {acesso['restante']}")
+                with col2:
+                    if st.button("🗑️ Revogar", key=f"rev_{acesso['codigo']}", use_container_width=True):
+                        if revogar_acesso_24h(acesso["codigo"]):
+                            st.success("✅ Acesso revogado!")
+                            time.sleep(1)
+                            st.rerun()
+                st.markdown("---")
+        else:
+            st.info("📭 Nenhum acesso 24h ativo no momento")
+
+        # Instruções para controle do acesso teste
+        st.markdown("#### 🔒 Controle Acesso Teste")
+        st.info("""
+        **Para bloquear/liberar acesso teste:**
+
+        1. Mude `ACESSO_TESTE_ATIVO = True/False` no código
+        2. Faça deploy no Streamlit Cloud
+        3. O app reiniciará automaticamente
+        """)
+
+
+# ==============================================
+# CSS PERSONALIZADO - OTIMIZADO PARA MOBILE
 # ==============================================
 
 st.markdown("""
 <style>
-    /* TEMA DARK COMPLETO */
-    .main {
-        background-color: #0e1117;
+    /* CSS OTIMIZADO PARA MOBILE */
+    @media (max-width: 768px) {
+        .main-header h1 {
+            font-size: 1.5rem !important;
+        }
+        .main-header p {
+            font-size: 0.9rem !important;
+        }
+        div[data-testid="stDataFrame"] {
+            font-size: 0.8rem;
+        }
+        .live-indicator {
+            padding: 8px 15px;
+            font-size: 0.9rem;
+        }
+        .status-badge {
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
     }
 
-    .stApp {
-        background: linear-gradient(135deg, #0c0f15 0%, #1a1d2e 100%);
-        color: #e2e8f0;
-    }
-
-    /* HEADER STYLING */
-    .main-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem;
+    /* Container da tabela ao vivo com efeito de estrelas */
+    div[data-testid="stDataFrame"] {
+        position: relative;
+        background: #000000;
         border-radius: 15px;
-        margin-bottom: 2rem;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .main-header h1 {
-        color: white;
-        text-align: center;
-        font-size: 2.5rem;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-    }
-
-    .main-header p {
-        color: rgba(255, 255, 255, 0.9);
-        text-align: center;
-        font-size: 1.1rem;
-        margin-bottom: 0;
-    }
-
-    /* ABAS MODERNAS E BONITAS */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        padding: 0 8px;
-        background: transparent;
-    }
-
-    .stTabs [data-baseweb="tab"] {
-        height: 60px;
-        white-space: pre-wrap;
-        background: linear-gradient(135deg, #2d3746 0%, #3a4556 100%);
-        border-radius: 12px 12px 0 0;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-bottom: none;
-        padding: 15px 25px;
-        font-weight: 600;
-        font-size: 1rem;
-        color: #b0b7c3;
-        transition: all 0.3s ease;
-        margin: 0 2px;
-    }
-
-    .stTabs [data-baseweb="tab"]:hover {
-        background: linear-gradient(135deg, #3a4556 0%, #4a5568 100%);
-        color: white;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    }
-
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        border-bottom: none;
-        box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
-    }
-
-    /* CONTEÚDO DAS ABAS */
-    .stTabs [data-baseweb="tab-panel"] {
-        background: #1a1d2e;
-        border-radius: 0 15px 15px 15px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 2rem;
-        margin-top: -1px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    }
-
-    /* TÍTULOS E TEXTOS */
-    h1, h2, h3, h4, h5, h6 {
-        color: #e2e8f0 !important;
-    }
-
-    .stMarkdown {
-        color: #e2e8f0;
-    }
-
-    /* WIDGETS E CONTROLES */
-    .stSelectbox, .stRadio, .stNumberInput {
-        background: #1e2235;
-        border-radius: 10px;
-        padding: 10px;
-        border: 1px solid #2d3746;
-    }
-
-    .stSelectbox label, .stRadio label, .stNumberInput label {
-        color: #e2e8f0 !important;
-        font-weight: 600;
-    }
-
-    .stSelectbox div[data-baseweb="select"] > div {
-        background: #2d3746;
-        border: 1px solid #4a5568;
-        color: #e2e8f0;
-    }
-
-    .stRadio [role="radiogroup"] {
-        background: #2d3746;
-        border-radius: 8px;
-        padding: 10px;
-    }
-
-    /* BOTÕES */
-    .stButton button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 8px !important;
-        padding: 10px 20px !important;
-        font-weight: 600 !important;
-        transition: all 0.3s ease !important;
-    }
-
-    .stButton button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-    }
-
-    /* TABELAS NO TEMA DARK */
-    div[data-testid="stDataFrame"] table {
-        width: 100%;
-        background: #1e2235;
-        border-radius: 10px;
         overflow: hidden;
     }
 
-    div[data-testid="stDataFrame"] th,
-    div[data-testid="stDataFrame"] td {
-        text-align: center !important;
-        vertical-align: middle !important;
-        padding: 12px 15px !important;
-        border: 1px solid #2d3746 !important;
-        color: #e2e8f0 !important;
+    /* Efeito de estrelas animadas no fundo */
+    div[data-testid="stDataFrame"]::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: 
+            radial-gradient(2px 2px at 20% 30%, white, transparent),
+            radial-gradient(2px 2px at 60% 70%, white, transparent),
+            radial-gradient(1px 1px at 50% 50%, white, transparent),
+            radial-gradient(1px 1px at 80% 10%, white, transparent),
+            radial-gradient(2px 2px at 90% 60%, white, transparent),
+            radial-gradient(1px 1px at 33% 80%, white, transparent),
+            radial-gradient(1px 1px at 15% 45%, rgba(255,255,255,0.5), transparent),
+            radial-gradient(1px 1px at 70% 20%, rgba(255,255,255,0.5), transparent);
+        background-size: 200% 200%;
+        animation: stars 60s linear infinite;
+        pointer-events: none;
+        z-index: 0;
     }
 
-    /* Headers das tabelas */
+    @keyframes stars {
+        0% { transform: scale(1); opacity: 0.8; }
+        50% { transform: scale(1.5); opacity: 1; }
+        100% { transform: scale(1); opacity: 0.8; }
+    }
+
+    /* Tabela com fundo escuro espacial */
+    div[data-testid="stDataFrame"] table {
+        background: rgba(0, 0, 0, 0.9) !important;
+        position: relative;
+        z-index: 1;
+    }
+
+    /* Headers com gradiente espacial */
     div[data-testid="stDataFrame"] thead th {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
+        background: linear-gradient(135deg, #1a1a3e 0%, #0f0f2e 100%) !important;
+        color: #ffffff !important;
         font-weight: 700 !important;
         text-align: center !important;
-        border: none !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
         font-size: 1rem;
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 1px;
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
     }
 
-    /* Linhas das tabelas */
-    div[data-testid="stDataFrame"] tbody tr:nth-child(even) {
-        background-color: #1e2235 !important;
+    /* Células da tabela */
+    div[data-testid="stDataFrame"] td {
+        background: rgba(10, 10, 30, 0.8) !important;
+        color: #e0e0e0 !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        text-align: center !important;
+        padding: 12px 15px !important;
+        position: relative;
     }
 
-    div[data-testid="stDataFrame"] tbody tr:nth-child(odd) {
-        background-color: #252a41 !important;
+    /* Linhas alternadas com efeito espacial */
+    div[data-testid="stDataFrame"] tbody tr:nth-child(even) td {
+        background: rgba(15, 15, 40, 0.8) !important;
     }
 
-    div[data-testid="stDataFrame"] tbody tr:hover {
-        background-color: #2d3746 !important;
+    div[data-testid="stDataFrame"] tbody tr:nth-child(odd) td {
+        background: rgba(10, 10, 30, 0.8) !important;
+    }
+
+    /* Hover com brilho espacial */
+    div[data-testid="stDataFrame"] tbody tr:hover td {
+        background: rgba(30, 30, 60, 0.9) !important;
+        box-shadow: 
+            inset 0 0 20px rgba(100, 150, 255, 0.2),
+            0 0 15px rgba(100, 150, 255, 0.3) !important;
         transform: scale(1.01);
-        transition: all 0.2s ease;
-    }
-
-    /* SIDEBAR */
-    .css-1d391kg {
-        background: #1a1d2e;
-    }
-
-    /* MÉTRICAS E ALERTAS */
-    .stMetric {
-        background: #1e2235;
-        border-radius: 10px;
-        padding: 15px;
-        border: 1px solid #2d3746;
-    }
-
-    .stAlert {
-        border-radius: 10px;
-        border: 1px solid;
-        background: #1e2235 !important;
-    }
-
-    /* SCROLLBAR PERSONALIZADA */
-    ::-webkit-scrollbar {
-        width: 8px;
-    }
-
-    ::-webkit-scrollbar-track {
-        background: #1a1d2e;
-    }
-
-    ::-webkit-scrollbar-thumb {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
-    }
-
-    /* ESPECIAL PARA ABA AO VIVO */
-    .live-indicator {
-        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-        color: white;
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-weight: bold;
-        animation: pulse 2s infinite;
-        display: inline-block;
-        margin-bottom: 1rem;
-    }
-
-    @keyframes pulse {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.05); }
-        100% { transform: scale(1); }
-    }
-
-    /* CARDS DE JOGOS AO VIVO */
-    .game-card {
-        background: linear-gradient(135deg, #2d3746 0%, #3a4556 100%);
-        border-radius: 12px;
-        padding: 20px;
-        margin: 10px 0;
-        border: 1px solid rgba(255, 255, 255, 0.1);
         transition: all 0.3s ease;
     }
 
-    .game-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-        border-color: #667eea;
+    /* Efeito de brilho nas bordas da tabela */
+    div[data-testid="stDataFrame"] {
+        box-shadow: 
+            0 0 30px rgba(100, 150, 255, 0.2),
+            inset 0 0 50px rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(100, 150, 255, 0.3);
     }
 
-    /* BADGES DE STATUS */
-    .status-badge {
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.8rem;
+    /* Estilo para AgGrid */
+    .ag-theme-streamlit,
+    .ag-theme-alpine {
+        background: #000000 !important;
+    }
+
+    .ag-theme-streamlit .ag-header,
+    .ag-theme-alpine .ag-header {
+        background: linear-gradient(135deg, #1a1a3e 0%, #0f0f2e 100%) !important;
+        border-bottom: 2px solid rgba(100, 150, 255, 0.3) !important;
+    }
+
+    .ag-theme-streamlit .ag-header-cell,
+    .ag-theme-alpine .ag-header-cell {
+        color: #ffffff !important;
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+    }
+
+    .ag-theme-streamlit .ag-row,
+    .ag-theme-alpine .ag-row {
+        background: rgba(10, 10, 30, 0.8) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+    }
+
+    .ag-theme-streamlit .ag-row-even,
+    .ag-theme-alpine .ag-row-even {
+        background: rgba(15, 15, 40, 0.8) !important;
+    }
+
+    .ag-theme-streamlit .ag-row:hover,
+    .ag-theme-alpine .ag-row:hover {
+        background: rgba(30, 30, 60, 0.9) !important;
+        box-shadow: inset 0 0 20px rgba(100, 150, 255, 0.2) !important;
+    }
+
+    .ag-theme-streamlit .ag-cell,
+    .ag-theme-alpine .ag-cell {
+        color: #e0e0e0 !important;
+        border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
+    }
+
+    /* Efeito de nebulosa no background do container principal */
+    .main > div:first-child {
+        background: 
+            radial-gradient(ellipse at 30% 40%, rgba(56, 89, 248, 0.08) 0%, transparent 50%),
+            radial-gradient(ellipse at 70% 60%, rgba(168, 85, 247, 0.08) 0%, transparent 50%),
+            #000000;
+    }
+
+    /* Live indicator */
+    .live-indicator {
+        background: linear-gradient(135deg, #ff0000, #ff6b6b);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 10px;
+        text-align: center;
         font-weight: bold;
-        margin-left: 10px;
+        margin-bottom: 20px;
+        animation: pulse 2s infinite;
     }
 
-    .status-live {
-        background: #ff6b6b;
-        color: white;
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.7; }
+        100% { opacity: 1; }
     }
 
-    .status-upcoming {
-        background: #4ecdc4;
+    /* Status badge */
+    .status-badge {
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-weight: bold;
+        text-align: center;
+    }
+    .status-test {
+        background: linear-gradient(135deg, #4CAF50, #45a049);
         color: white;
+    }
+    .status-premium {
+        background: linear-gradient(135deg, #FFD700, #FFA500);
+        color: black;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ==============================================
-# FUNÇÕES DO FIFALGORITHM (MANTIDAS ORIGINAIS)
+# FUNÇÕES DO FIFALGORITHM (MANTIDAS)
 # ==============================================
 
 def requisicao_segura(url: str, timeout: int = 15) -> Optional[requests.Response]:
@@ -360,7 +681,7 @@ def extrair_dados_pagina(url: str) -> list[list[str]]:
         return []
 
     try:
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "html.parser")
         return [
             [c.get_text(strip=True) for c in tr.find_all(["th", "td"])]
             for tr in soup.find_all("tr")
@@ -595,7 +916,7 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
 
         colunas_ao_vivo_solicitadas = [
             "Hora", "Liga", "Mandante", "Visitante", "GP", "GC",
-            "Over Mandante", "Over Visitante",  # Novas colunas
+            "Over Mandante", "Over Visitante",
             "Sugestão HT", "Sugestão FT"
         ]
 
@@ -608,11 +929,10 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
 
 
 # ==============================================
-# FUNÇÕES AUXILIARES (MANTIDAS ORIGINAIS)
+# FUNÇÕES AUXILIARES (MANTIDAS)
 # ==============================================
 
 def calcular_estatisticas_jogador(df: pd.DataFrame, jogador: str, liga: str) -> dict:
-    """Calcula estatísticas de um jogador em uma liga específica"""
     zeros = {
         "jogos_total": 0, "gols_marcados": 0, "gols_sofridos": 0,
         "gols_marcados_ht": 0, "gols_sofridos_ht": 0,
@@ -669,34 +989,16 @@ def calcular_estatisticas_jogador(df: pd.DataFrame, jogador: str, liga: str) -> 
 
 @st.cache_data(show_spinner=False, ttl=300)
 def calcular_estatisticas_todos_jogadores(df_resultados: pd.DataFrame) -> pd.DataFrame:
-    """Calcula estatísticas consolidadas para todos os jogadores"""
     if df_resultados.empty:
         return pd.DataFrame()
 
     jogador_stats = defaultdict(lambda: {
-        "jogos_total": 0,
-        "vitorias": 0,
-        "derrotas": 0,
-        "empates": 0,
-        "gols_marcados": 0,
-        "gols_sofridos": 0,
-        "gols_marcados_ht": 0,
-        "gols_sofridos_ht": 0,
-        "clean_sheets": 0,
-        "over_05_ht_hits": 0,
-        "over_15_ht_hits": 0,
-        "over_25_ht_hits": 0,
-        "btts_ht_hits": 0,
-        "over_05_ft_hits": 0,
-        "over_15_ft_hits": 0,
-        "over_25_ft_hits": 0,
-        "over_35_ft_hits": 0,
-        "over_45_ft_hits": 0,
-        "over_55_ft_hits": 0,
-        "over_65_ft_hits": 0,
-        "btts_ft_hits": 0,
-        "under_25_ft_hits": 0,
-        "ligas_atuantes": set()
+        "jogos_total": 0, "vitorias": 0, "derrotas": 0, "empates": 0,
+        "gols_marcados": 0, "gols_sofridos": 0, "gols_marcados_ht": 0, "gols_sofridos_ht": 0,
+        "clean_sheets": 0, "over_05_ht_hits": 0, "over_15_ht_hits": 0, "over_25_ht_hits": 0,
+        "btts_ht_hits": 0, "over_05_ft_hits": 0, "over_15_ft_hits": 0, "over_25_ft_hits": 0,
+        "over_35_ft_hits": 0, "over_45_ft_hits": 0, "over_55_ft_hits": 0, "over_65_ft_hits": 0,
+        "btts_ft_hits": 0, "under_25_ft_hits": 0, "ligas_atuantes": set()
     })
 
     for _, row in df_resultados.iterrows():
@@ -792,7 +1094,7 @@ def calcular_estatisticas_todos_jogadores(df_resultados: pd.DataFrame) -> pd.Dat
             jogador_stats[mandante]["btts_ft_hits"] += 1
             jogador_stats[visitante]["btts_ft_hits"] += 1
 
-    # Converter para DataFrame e calcular percentuais/médias
+    # Converter para DataFrame
     df_rankings_base = pd.DataFrame.from_dict(jogador_stats, orient="index")
     df_rankings_base.index.name = "Jogador"
     df_rankings_base = df_rankings_base.reset_index()
@@ -800,51 +1102,49 @@ def calcular_estatisticas_todos_jogadores(df_resultados: pd.DataFrame) -> pd.Dat
     # Calcula as métricas percentuais/médias
     df_rankings_base["Win Rate (%)"] = (df_rankings_base["vitorias"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Derrota Rate (%)"] = (
-            df_rankings_base["derrotas"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["derrotas"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Gols Marcados Média"] = (
-            df_rankings_base["gols_marcados"] / df_rankings_base["jogos_total"]).fillna(0)
+                df_rankings_base["gols_marcados"] / df_rankings_base["jogos_total"]).fillna(0)
     df_rankings_base["Gols Sofridos Média"] = (
-            df_rankings_base["gols_sofridos"] / df_rankings_base["jogos_total"]).fillna(0)
+                df_rankings_base["gols_sofridos"] / df_rankings_base["jogos_total"]).fillna(0)
     df_rankings_base["Saldo de Gols"] = df_rankings_base["gols_marcados"] - df_rankings_base["gols_sofridos"]
     df_rankings_base["Clean Sheets (%)"] = (
-            df_rankings_base["clean_sheets"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["clean_sheets"] / df_rankings_base["jogos_total"] * 100).fillna(0)
 
     # Percentuais de Overs e BTTS
     df_rankings_base["Over 0.5 HT (%)"] = (
-            df_rankings_base["over_05_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["over_05_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 1.5 HT (%)"] = (
-            df_rankings_base["over_15_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["over_15_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 2.5 HT (%)"] = (
-            df_rankings_base["over_25_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["over_25_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["BTTS HT (%)"] = (df_rankings_base["btts_ht_hits"] / df_rankings_base["jogos_total"] * 100).fillna(
         0)
     df_rankings_base["Over 0.5 FT (%)"] = (
-            df_rankings_base["over_05_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["over_05_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 1.5 FT (%)"] = (
-            df_rankings_base["over_15_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["over_15_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 2.5 FT (%)"] = (
-            df_rankings_base["over_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["over_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 3.5 FT (%)"] = (
-            df_rankings_base["over_35_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["over_35_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 4.5 FT (%)"] = (
-            df_rankings_base["over_45_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["over_45_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 5.5 FT (%)"] = (
-            df_rankings_base["over_55_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["over_55_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["Over 6.5 FT (%)"] = (
-            df_rankings_base["over_65_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["over_65_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
     df_rankings_base["BTTS FT (%)"] = (df_rankings_base["btts_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(
         0)
     df_rankings_base["Under 2.5 FT (%)"] = (
-            df_rankings_base["under_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
+                df_rankings_base["under_25_ft_hits"] / df_rankings_base["jogos_total"] * 100).fillna(0)
 
-    # Converte o set de ligas para string para exibição
     df_rankings_base["Ligas Atuantes"] = df_rankings_base["ligas_atuantes"].apply(lambda x: ", ".join(sorted(list(x))))
 
     return df_rankings_base
 
 
 def get_recent_player_stats(df_resultados: pd.DataFrame, player_name: str, num_games: int) -> dict:
-    """Calcula estatísticas para um jogador nas suas últimas N partidas"""
     player_games = df_resultados[
         (df_resultados["Mandante"] == player_name) | (df_resultados["Visitante"] == player_name)
         ].sort_values("Data", ascending=False).head(num_games).copy()
@@ -853,29 +1153,12 @@ def get_recent_player_stats(df_resultados: pd.DataFrame, player_name: str, num_g
         return {}
 
     stats = {
-        "jogos_recentes": len(player_games),
-        "gols_marcados_ft": 0,
-        "gols_sofridos_ft": 0,
-        "gols_marcados_ht": 0,
-        "gols_sofridos_ht": 0,
-        "over_05_ht_hits": 0,
-        "over_15_ht_hits": 0,
-        "over_25_ht_hits": 0,
-        "btts_ht_hits": 0,
-        "over_05_ft_hits": 0,
-        "over_15_ft_hits": 0,
-        "over_25_ft_hits": 0,
-        "over_35_ft_hits": 0,
-        "over_45_ft_hits": 0,
-        "over_55_ft_hits": 0,
-        "over_65_ft_hits": 0,
-        "btts_ft_hits": 0,
-        "under_25_ft_hits": 0,
-        "sequencia_vitorias": 0,
-        "sequencia_derrotas": 0,
-        "sequencia_empates": 0,
-        "sequencia_btts": 0,
-        "sequencia_over_25_ft": 0
+        "jogos_recentes": len(player_games), "gols_marcados_ft": 0, "gols_sofridos_ft": 0,
+        "gols_marcados_ht": 0, "gols_sofridos_ht": 0, "over_05_ht_hits": 0, "over_15_ht_hits": 0,
+        "over_25_ht_hits": 0, "btts_ht_hits": 0, "over_05_ft_hits": 0, "over_15_ft_hits": 0,
+        "over_25_ft_hits": 0, "over_35_ft_hits": 0, "over_45_ft_hits": 0, "over_55_ft_hits": 0,
+        "over_65_ft_hits": 0, "btts_ft_hits": 0, "under_25_ft_hits": 0, "sequencia_vitorias": 0,
+        "sequencia_derrotas": 0, "sequencia_empates": 0, "sequencia_btts": 0, "sequencia_over_25_ft": 0
     }
 
     last_result = None
@@ -976,7 +1259,6 @@ def get_recent_player_stats(df_resultados: pd.DataFrame, player_name: str, num_g
 
 
 def cor_icon(h_m, t_m, h_v, t_v) -> str:
-    """Retorna um ícone de cor com base nos percentuais de acerto"""
     pct_m = h_m / t_m if t_m else 0
     pct_v = h_v / t_v if t_v else 0
     if pct_m >= 0.70 and pct_v >= 0.70:
@@ -987,13 +1269,11 @@ def cor_icon(h_m, t_m, h_v, t_v) -> str:
 
 
 def format_stats(h_m, t_m, h_v, t_v) -> str:
-    """Formata estatísticas com ícones de cor"""
     icon = cor_icon(h_m, t_m, h_v, t_v)
     return f"{icon} {h_m}/{t_m}\n{h_v}/{t_v}"
 
 
 def format_gols_ht_com_icone_para_display(gols_ht_media: float) -> str:
-    """Formata a média de gols HT com ícone de cor"""
     if gols_ht_media >= 2.75:
         return f"🟢 {gols_ht_media:.2f}"
     elif 2.62 <= gols_ht_media <= 2.74:
@@ -1002,7 +1282,6 @@ def format_gols_ht_com_icone_para_display(gols_ht_media: float) -> str:
 
 
 def sugerir_over_ht(media_gols_ht: float) -> str:
-    """Sugere um mercado Over HT com base na média de gols HT"""
     if media_gols_ht >= 2.75:
         return "Over 2.5 HT"
     elif media_gols_ht >= 2.20:
@@ -1014,7 +1293,6 @@ def sugerir_over_ht(media_gols_ht: float) -> str:
 
 
 def sugerir_over_ft(media_gols_ft: float) -> str:
-    """Retorna a sugestão para Over FT com base na média de gols FT"""
     if media_gols_ft >= 6.70:
         return "Over 5.5 FT"
     elif media_gols_ft >= 5.70:
@@ -1036,8 +1314,6 @@ def sugerir_over_ft(media_gols_ft: float) -> str:
 # ==============================================
 
 def start_auto_update():
-    """Inicia a thread de atualização automática"""
-
     def update_loop():
         while True:
             time.sleep(UPDATE_INTERVAL)
@@ -1051,7 +1327,6 @@ def start_auto_update():
 
 
 def check_for_updates():
-    """Verifica se é hora de atualizar os dados"""
     global last_update_time
     current_time = time.time()
     if current_time - last_update_time >= UPDATE_INTERVAL:
@@ -1061,16 +1336,68 @@ def check_for_updates():
 
 
 # ==============================================
-# INTERFACE PRINCIPAL DO APLICATIVO
+# APLICATIVO PRINCIPAL COM AUTENTICAÇÃO
 # ==============================================
 
 def fifalgorithm_app():
-    """Aplicativo principal do FIFAlgorithm"""
+    """Aplicativo principal com autenticação"""
+
+    # Verificar autenticação
+    if not st.session_state.get("authenticated", False):
+        tela_login()
+        return
+
+    # Verificar se acesso premium expirou
+    if st.session_state.get("tipo_acesso") == "premium_24h":
+        codigo = st.session_state.get("codigo_acesso")
+        if codigo:
+            valido, dados = validar_acesso_24h(codigo)
+            if not valido:
+                st.error("⏰ Seu acesso de 24h expirou!")
+                if st.button("🔄 Voltar ao Login"):
+                    st.session_state.authenticated = False
+                    st.rerun()
+                return
+
+    # Configurar página
     st.set_page_config(
-        page_title="FIFAlgorithm",
+        page_title="FIFAlgorithm - Ao Vivo",
         layout="wide",
         initial_sidebar_state="expanded",
     )
+
+    # Header com informações do acesso
+    col1, col2, col3 = st.columns([3, 1, 1])
+
+    with col1:
+        st.markdown("""
+        <div class="main-header">
+            <h1>🦅 FIFAlgorithm</h1>
+            <p>Análises Inteligentes de Partidas de E-soccer FIFA</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        tipo_acesso = st.session_state.get("tipo_acesso", "teste")
+        if tipo_acesso == "premium_24h":
+            st.markdown('<div class="status-badge status-premium">💎 PREMIUM 24H</div>', unsafe_allow_html=True)
+            # Mostrar tempo restante
+            codigo = st.session_state.get("codigo_acesso")
+            if codigo:
+                acessos = carregar_acessos_24h()
+                if codigo in acessos:
+                    data_expiracao = datetime.strptime(acessos[codigo]["data_expiracao"], "%Y-%m-%d %H:%M:%S")
+                    tempo_restante = data_expiracao - datetime.now()
+                    horas = int(tempo_restante.total_seconds() // 3600)
+                    minutos = int((tempo_restante.total_seconds() % 3600) // 60)
+                    st.write(f"⏳ {horas}h {minutos}m")
+        else:
+            st.markdown('<div class="status-badge status-test">🎯 ACESSO TESTE</div>', unsafe_allow_html=True)
+
+    with col3:
+        if st.button("🚪 Sair"):
+            st.session_state.authenticated = False
+            st.rerun()
 
     # Inicia a thread de atualização automática
     start_auto_update()
@@ -1078,20 +1405,12 @@ def fifalgorithm_app():
     brasil_timezone = pytz.timezone("America/Sao_Paulo")
     current_time_br = datetime.now(brasil_timezone).strftime("%H:%M:%S")
 
-    # Header personalizado com tema dark
-    st.markdown("""
-    <div class="main-header">
-        <h1>💀 FIFAlgorithm</h1>
-        <p>Análise Inteligente de Partidas de E-soccer</p>
-    </div>
-    """, unsafe_allow_html=True)
-
     # Adiciona indicador de atualização automática
     if st.session_state.get("force_update", False):
         st.success("✅ Dados atualizados automaticamente!")
         st.session_state["force_update"] = False
 
-    st.markdown(f"**🔷 Última atualização:** {current_time_br}")
+    st.markdown(f"**⌛️ Última atualização:** {current_time_br}")
 
     # Carrega os dados essenciais
     try:
@@ -1101,39 +1420,31 @@ def fifalgorithm_app():
 
     except Exception as e:
         st.error(f"Erro ao carregar dados: {str(e)}")
-        # Cria DataFrames vazios para evitar erros no resto do app
         df_resultados = pd.DataFrame()
         df_live_clean = pd.DataFrame()
         df_live_display = pd.DataFrame()
         df_stats_all_players = pd.DataFrame()
 
-    # Sistema de abas com tema dark
-    if "current_tab" not in st.session_state:
-        st.session_state["current_tab"] = "⚡️ Ao Vivo"
-
-    tabs = st.tabs(["⚡️ Ao Vivo", "⭐️ Radar FIFA", "⭐️ Dicas Inteligentes", "⭐️ Previsão IA", "⭐️ Análise Manual",
-                    "💰 Ganhos & Perdas", "✅ Salvar Jogos", "📊 Resultados", "📈 Relatórios"])
+    # Sistema de abas
+    tabs = st.tabs(["⚡️ Ao Vivo", "⭐️ Radar FIFA", "🧠 Alertas IA", "⚽️ Resultados"])
 
     # Aba 1: Ao Vivo
     with tabs[0]:
-        st.header("🎮 𝐋𝐢𝐬𝐭𝐚 𝐝𝐞 𝐉𝐨𝐠𝐨𝐬")
+        st.header("🔥 Buscar Jogos")
 
-        # Indicador de jogos ao vivo com animação
         if not df_live_display.empty:
             st.markdown(f"""
             <div class="live-indicator">
-                🔴 AO VIVO - {len(df_live_display)} Jogos Disponíveis
+                🟢 AO VIVO - {len(df_live_display)} Jogos Disponíveis
             </div>
             """, unsafe_allow_html=True)
         else:
             st.warning("⏳ Nenhuma partida ao vivo no momento")
 
         if not df_live_display.empty:
-            # Configuração dos filtros na sidebar
             with st.sidebar:
-                st.subheader("🔍 Filtros Avançados")
+                st.subheader("🔍 Filtros Rápidos")
 
-                # Filtro por Liga
                 ligas_disponiveis = df_live_display['Liga'].unique()
                 ligas_selecionadas = st.multiselect(
                     'Selecione as Ligas:',
@@ -1141,139 +1452,99 @@ def fifalgorithm_app():
                     default=ligas_disponiveis
                 )
 
-                # Filtro por Sugestão HT
                 sugestoes_ht = df_live_display['Sugestão HT'].unique()
                 ht_selecionados = st.multiselect(
-                    'Filtrar por Sugestão HT:',
+                    'Sugestão HT:',
                     options=sugestoes_ht,
                     default=sugestoes_ht
                 )
 
-                # Filtro por Sugestão FT
                 sugestoes_ft = df_live_display['Sugestão FT'].unique()
                 ft_selecionados = st.multiselect(
-                    'Filtrar por Sugestão FT:',
+                    'Sugestão FT:',
                     options=sugestoes_ft,
                     default=sugestoes_ft
                 )
 
-                # Filtro por Over Mandante
-                over_mandante_opcoes = df_live_display['Over Mandante'].unique()
-                over_mandante_selecionados = st.multiselect(
-                    'Filtrar por Over Mandante:',
-                    options=over_mandante_opcoes,
-                    default=over_mandante_opcoes
-                )
-
-                # Filtro por Over Visitante
-                over_visitante_opcoes = df_live_display['Over Visitante'].unique()
-                over_visitante_selecionados = st.multiselect(
-                    'Filtrar por Over Visitante:',
-                    options=over_visitante_opcoes,
-                    default=over_visitante_opcoes
-                )
-
-                # Botão para resetar filtros
-                if st.button("🔄 Resetar Filtros"):
-                    ligas_selecionadas = ligas_disponiveis
-                    ht_selecionados = sugestoes_ht
-                    ft_selecionados = sugestoes_ft
-                    over_mandante_selecionados = over_mandante_opcoes
-                    over_visitante_selecionados = over_visitante_opcoes
-
-            # Aplicar filtros
             df_filtrado = df_live_display[
                 (df_live_display['Liga'].isin(ligas_selecionadas)) &
                 (df_live_display['Sugestão HT'].isin(ht_selecionados)) &
-                (df_live_display['Sugestão FT'].isin(ft_selecionados)) &
-                (df_live_display['Over Mandante'].isin(over_mandante_selecionados)) &
-                (df_live_display['Over Visitante'].isin(over_visitante_selecionados))
+                (df_live_display['Sugestão FT'].isin(ft_selecionados))
                 ]
 
-            # Atualizar contador de jogos filtrados
-            st.write(f"🔍 Mostrando {len(df_filtrado)} de {len(df_live_display)} jogos")
+            if len(df_filtrado) > 0:
+                col1, col2, col3, col4 = st.columns(4)
 
-            # Configuração da tabela interativa com AgGrid
+                with col1:
+                    ligas_count = df_filtrado['Liga'].nunique()
+                    st.metric("🎯 Ligas", ligas_count)
+
+                with col2:
+                    over_ht_count = len(df_filtrado[df_filtrado['Sugestão HT'] != 'Sem Entrada'])
+                    st.metric("⚡ Sug. HT", over_ht_count)
+
+                with col3:
+                    over_ft_count = len(df_filtrado[df_filtrado['Sugestão FT'] != 'Sem Entrada'])
+                    st.metric("🚀 Sug. FT", over_ft_count)
+
+                with col4:
+                    over_total = len(df_filtrado[df_filtrado['Over Mandante'] != '']) + len(
+                        df_filtrado[df_filtrado['Over Visitante'] != ''])
+                    st.metric("💎 Over Jogadores", over_total)
+
             gb = GridOptionsBuilder.from_dataframe(df_filtrado)
-
-            # Configuração padrão com seleção múltipla de colunas
             gb.configure_default_column(
                 flex=1,
-                minWidth=100,
+                minWidth=80,
+                maxWidth=150,
                 wrapText=True,
                 autoHeight=True,
                 editable=False,
                 filterable=True,
-                sortable=True
+                sortable=True,
+                resizable=True
             )
 
-            # Configurar coluna de seleção
-            gb.configure_selection(
-                selection_mode='multiple',
-                use_checkbox=True,
-                rowMultiSelectWithClick=True
-            )
+            colunas_principais = [
+                "Hora", "Liga", "Mandante", "Visitante",
+                "GP", "GC", "Over Mandante", "Over Visitante",
+                "Sugestão HT", "Sugestão FT"
+            ]
 
-            # Configurar todas as colunas como filtros
-            for col in df_filtrado.columns:
-                gb.configure_column(col, header_name=col, filter=True)
+            for col in colunas_principais:
+                if col in df_filtrado.columns:
+                    gb.configure_column(col,
+                                        minWidth=80 if col in ["Hora", "GP", "GC"] else 120,
+                                        maxWidth=150)
 
+            gb.configure_selection(selection_mode='multiple', use_checkbox=True)
             grid_options = gb.build()
 
-            # Renderizar tabela
+            st.markdown('<div class="table-container">', unsafe_allow_html=True)
+            height = min(800, 35 + 35 * len(df_filtrado))
+
             grid_response = AgGrid(
-                df_filtrado,
+                df_filtrado[colunas_principais],
                 gridOptions=grid_options,
-                height=min(600, 35 + 35 * len(df_filtrado)),
+                height=height,
                 width='100%',
-                fit_columns_on_grid_load=False,
                 theme='streamlit',
                 update_mode=GridUpdateMode.MODEL_CHANGED,
-                allow_unsafe_jscode=True,
-                enable_enterprise_modules=True,
-                custom_css={
-                    "#gridToolBar": {
-                        "padding-bottom": "0px !important",
-                    }
-                }
+                allow_unsafe_jscode=True
             )
 
-            # Botão de salvamento
-            if st.button("💾 Salvar Jogos Selecionados", type="primary"):
-                selected_rows = grid_response['selected_rows']
-                if not selected_rows.empty:  # Verifica se o DataFrame não está vazio
-                    selected_df = pd.DataFrame(selected_rows)
-                    # Adiciona data de salvamento
-                    selected_df['Data Salvamento'] = datetime.now().strftime("%d/%m/%Y %H:%M")
+            st.markdown('</div>', unsafe_allow_html=True)
 
-                    # Atualiza jogos salvos
-                    if 'saved_games' not in st.session_state:
-                        st.session_state.saved_games = selected_df
-                    else:
-                        # Evita duplicatas
-                        existing_games = st.session_state.saved_games
-                        mask = selected_df.apply(
-                            lambda row: ~((existing_games['Mandante'] == row['Mandante']) &
-                                          (existing_games['Visitante'] == row['Visitante']) &
-                                          (existing_games['Hora'] == row['Hora'])).any(),
-                            axis=1
-                        )
-                        new_games = selected_df[mask]
-
-                        if not new_games.empty:
-                            st.session_state.saved_games = pd.concat([existing_games, new_games])
-                            st.success(f"✅ {len(new_games)} novos jogos salvos!")
-                        else:
-                            st.warning("Nenhum jogo novo para salvar (todos já estão na lista)")
-                else:
-                    st.warning("Nenhum jogo selecionado")
+            if grid_response['selected_rows']:
+                selected_count = len(grid_response['selected_rows'])
+                if st.button(f"📊 Analisar {selected_count} Jogos Selecionados", use_container_width=True):
+                    st.info(f"Análise iniciada para {selected_count} jogos...")
 
     # Aba 2: Radar FIFA
     with tabs[1]:
-        st.header("🎯 Radar FIFA")
-        st.write("Análise das porcentagens para mercados Over nas ligas ao vivo")
+        st.header("⭐️ Radar FIFA")
+        st.write("Indicador de Mercados Lucrativos por Liga em tempo Real.")
 
-        # Critérios para o Radar FIFA
         CRITERIOS_HT = {
             "0.5 HT": {"min": 1.70, "max": float('inf')},
             "1.5 HT": {"min": 2.20, "max": float('inf')},
@@ -1365,517 +1636,135 @@ def fifalgorithm_app():
         else:
             st.info("Nenhum dado para o Radar FIFA.")
 
-    # Aba 3: Dicas Inteligentes
+    # Aba 3: Alertas IA
     with tabs[2]:
-        st.header("💡 Dicas Inteligentes por Liga")
-        st.write("Análise de consistência e oscilações de cada jogador na liga")
+        st.header("🧠 Alertas IA")
+        st.write("Dicas inteligentes de Apostas para cada Partida")
 
-        if df_resultados.empty:
-            st.warning("Dados insuficientes para gerar dicas.")
+        if df_live_clean.empty or df_resultados.empty:
+            st.warning("Dados insuficientes para gerar alertas. Aguarde a atualização.")
         else:
-            min_jogos = 5
-            total_jogos_analise = 10
-            ligas_principais = ["Battle 8 Min", "Volta 6 Min", "H2H 8 Min", "GT 12 Min"]
+            MIN_JOGOS_CONFRONTO = 5
+            MIN_PORCENTAGEM = 75
 
-            for liga in ligas_principais:
-                st.markdown(f"### 🏆 Liga: {liga}")
+            brasil_tz = pytz.timezone('America/Sao_Paulo')
+            hora_atual = datetime.now(brasil_tz).strftime("%H:%M")
 
-                df_liga = df_resultados[df_resultados["Liga"] == liga]
+            df_live_futuro = df_live_clean[df_live_clean['Hora'] > hora_atual].sort_values('Hora', ascending=True)
 
-                if df_liga.empty:
-                    st.info(f"Nenhum dado disponível para a liga {liga}")
-                    continue
+            st.subheader("📈 Resumo Executivo")
 
-                jogadores = pd.concat([df_liga["Mandante"], df_liga["Visitante"]]).unique()
-                dados_jogadores = []
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Próximos Jogos", len(df_live_futuro))
+            with col2:
+                jogos_com_historico = sum(1 for _, jogo in df_live_futuro.iterrows()
+                                          if len(df_resultados[((df_resultados["Mandante"] == jogo["Mandante"]) &
+                                                                (df_resultados["Visitante"] == jogo["Visitante"])) |
+                                                               ((df_resultados["Mandante"] == jogo["Visitante"]) &
+                                                                (df_resultados["Visitante"] == jogo[
+                                                                    "Mandante"]))]) >= MIN_JOGOS_CONFRONTO)
+                st.metric("Com Histórico", jogos_com_historico)
+            with col3:
+                st.metric("Critério Mínimo", f"{MIN_PORCENTAGEM}%")
 
-                for jogador in jogadores:
-                    jogos_jogador = df_liga[
-                        (df_liga["Mandante"] == jogador) |
-                        (df_liga["Visitante"] == jogador)
-                        ].sort_values("Data", ascending=False).head(total_jogos_analise)
+            if st.button("🎯 Gerar Análise Detalhada", type="primary", use_container_width=True):
+                with st.spinner("Analisando confrontos diretos..."):
+                    relatorios = []
 
-                    if len(jogos_jogador) < min_jogos:
-                        continue
+                    for _, jogo in df_live_futuro.iterrows():
+                        p1 = jogo["Mandante"]
+                        p2 = jogo["Visitante"]
+                        liga = jogo["Liga"]
+                        hora_jogo = jogo["Hora"]
 
-                    stats = {
-                        "Jogador": jogador,
-                        "Jogos": len(jogos_jogador),
-                        "Over 1.5 HT": 0,
-                        "Over 2.5 HT": 0,
-                        "Over 2.5 FT": 0,
-                        "Over 3.5 FT": 0,
-                        "Over 4.5 FT": 0,
-                        "Gols Marcados Média": 0,
-                        "Gols Sofridos Média": 0,
-                        "BTTS FT": 0
-                    }
+                        df_historico = df_resultados[
+                            ((df_resultados["Mandante"] == p1) & (df_resultados["Visitante"] == p2)) |
+                            ((df_resultados["Mandante"] == p2) & (df_resultados["Visitante"] == p1))
+                            ]
 
-                    for _, jogo in jogos_jogador.iterrows():
-                        is_mandante = jogo["Mandante"] == jogador
+                        if len(df_historico) >= MIN_JOGOS_CONFRONTO:
+                            p1_wins = len(df_historico[((df_historico["Mandante"] == p1) & (
+                                    df_historico["Mandante FT"] > df_historico["Visitante FT"])) |
+                                                       ((df_historico["Visitante"] == p1) & (
+                                                               df_historico["Visitante FT"] > df_historico[
+                                                           "Mandante FT"]))])
+                            p1_win_rate = (p1_wins / len(df_historico)) * 100
 
-                        total_ht = jogo["Total HT"]
-                        if total_ht > 1.5: stats["Over 1.5 HT"] += 1
-                        if total_ht > 2.5: stats["Over 2.5 HT"] += 1
+                            p2_wins = len(df_historico[((df_historico["Mandante"] == p2) & (
+                                    df_historico["Mandante FT"] > df_historico["Visitante FT"])) |
+                                                       ((df_historico["Visitante"] == p2) & (
+                                                               df_historico["Visitante FT"] > df_historico[
+                                                           "Mandante FT"]))])
+                            p2_win_rate = (p2_wins / len(df_historico)) * 100
 
-                        total_ft = jogo["Total FT"]
-                        if total_ft > 2.5: stats["Over 2.5 FT"] += 1
-                        if total_ft > 3.5: stats["Over 3.5 FT"] += 1
-                        if total_ft > 4.5: stats["Over 4.5 FT"] += 1
+                            over_25_hits = len(df_historico[df_historico["Total FT"] > 2.5])
+                            over_25_rate = (over_25_hits / len(df_historico)) * 100
 
-                        if is_mandante:
-                            stats["Gols Marcados Média"] += jogo["Mandante FT"]
-                            stats["Gols Sofridos Média"] += jogo["Visitante FT"]
-                        else:
-                            stats["Gols Marcados Média"] += jogo["Visitante FT"]
-                            stats["Gols Sofridos Média"] += jogo["Mandante FT"]
+                            if p1_win_rate >= MIN_PORCENTAGEM:
+                                relatorios.append({
+                                    "Hora": hora_jogo,
+                                    "Liga": liga,
+                                    "Jogo": f"{p1} x {p2}",
+                                    "Tipo Aposta": f"Vitória {p1}",
+                                    "Estatística": f"VENCEU {p1_wins} DE {len(df_historico)} JOGOS ({p1_win_rate:.0f}%)",
+                                    "Confiança": "🟢 Alta" if p1_win_rate >= 80 else "🟡 Média",
+                                    "Jogos Analisados": len(df_historico)
+                                })
 
-                        if jogo["Mandante FT"] > 0 and jogo["Visitante FT"] > 0:
-                            stats["BTTS FT"] += 1
+                            if p2_win_rate >= MIN_PORCENTAGEM:
+                                relatorios.append({
+                                    "Hora": hora_jogo,
+                                    "Liga": liga,
+                                    "Jogo": f"{p1} x {p2}",
+                                    "Tipo Aposta": f"Vitória {p2}",
+                                    "Estatística": f"VENCEU {p2_wins} DE {len(df_historico)} JOGOS ({p2_win_rate:.0f}%)",
+                                    "Confiança": "🟢 Alta" if p2_win_rate >= 80 else "🟡 Média",
+                                    "Jogos Analisados": len(df_historico)
+                                })
 
-                    stats["Gols Marcados Média"] = round(stats["Gols Marcados Média"] / len(jogos_jogador), 2)
-                    stats["Gols Sofridos Média"] = round(stats["Gols Sofridos Média"] / len(jogos_jogador), 2)
+                            if over_25_rate >= MIN_PORCENTAGEM:
+                                relatorios.append({
+                                    "Hora": hora_jogo,
+                                    "Liga": liga,
+                                    "Jogo": f"{p1} x {p2}",
+                                    "Tipo Aposta": "Over 2.5 FT",
+                                    "Estatística": f"OCORREU EM {over_25_hits} DE {len(df_historico)} JOGOS ({over_25_rate:.0f}%)",
+                                    "Confiança": "🟢 Alta" if over_25_rate >= 80 else "🟡 Média",
+                                    "Jogos Analisados": len(df_historico)
+                                })
 
-                    for key in ["Over 1.5 HT", "Over 2.5 HT", "Over 2.5 FT", "Over 3.5 FT", "Over 4.5 FT", "BTTS FT"]:
-                        stats[key] = round((stats[key] / len(jogos_jogador)) * 100)
+                    if relatorios:
+                        df_relatorios = pd.DataFrame(relatorios)
+                        df_relatorios = df_relatorios.sort_values("Hora", ascending=True)
 
-                    dados_jogadores.append(stats)
-
-                if not dados_jogadores:
-                    st.info(f"Nenhum jogador com mínimo de {min_jogos} jogos na liga {liga}")
-                    continue
-
-                df_ranking = pd.DataFrame(dados_jogadores)
-                df_ranking = df_ranking.sort_values("Over 2.5 FT", ascending=False)
-
-                medalhas = {0: "🥇", 1: "🥈", 2: "🥉"}
-                df_ranking = df_ranking.reset_index(drop=True)
-                df_ranking["Pos"] = df_ranking.index + 1
-                df_ranking["Jogador"] = df_ranking.apply(
-                    lambda row: f"{medalhas.get(row.name, '')} {row['Jogador']}" if row.name in medalhas else row[
-                        "Jogador"],
-                    axis=1
-                )
-
-                st.dataframe(
-                    df_ranking[
-                        ["Pos", "Jogador", "Jogos", "Over 2.5 FT", "Over 3.5 FT", "Over 1.5 HT", "Gols Marcados Média",
-                         "Gols Sofridos Média"]],
-                    use_container_width=True,
-                    height=400
-                )
-
-    # Aba 4: Previsão IA
-    with tabs[3]:
-        st.header("🤖 Previsão IA (Liga)")
-
-        if df_resultados.empty:
-            st.warning("Dados insuficientes para análise.")
-        else:
-            config = {
-                "jogos_por_liga": 20,
-                "min_sequencia": 3,
-                "min_sucesso": 70,
-                "ligas": ["Battle 8 Min", "Volta 6 Min", "H2H 8 Min", "GT 12 Min"]
-            }
-
-            dfs_ligas = []
-            for liga in config["ligas"]:
-                df_liga = df_resultados[df_resultados["Liga"] == liga].tail(config["jogos_por_liga"])
-                dfs_ligas.append(df_liga)
-
-            df_recente = pd.concat(dfs_ligas) if dfs_ligas else pd.DataFrame()
-
-            if df_recente.empty:
-                st.info("Nenhum dado recente encontrado.")
-            else:
-                sequences_data = []
-                all_players = pd.concat([df_recente["Mandante"], df_recente["Visitante"]]).unique()
-
-                for player in all_players:
-                    player_matches = df_recente[
-                        (df_recente["Mandante"] == player) |
-                        (df_recente["Visitante"] == player)
-                        ].sort_values("Data", ascending=False)
-
-                    if len(player_matches) < config["min_sequencia"]:
-                        continue
-
-                    markets = {
-                        "🎯 1.5+ Gols": {
-                            "condition": lambda r, p: (r["Mandante FT"] if r["Mandante"] == p else r[
-                                "Visitante FT"]) >= 1.5,
-                            "weight": 1.2
-                        },
-                        "🎯 2.5+ Gols": {
-                            "condition": lambda r, p: (r["Mandante FT"] if r["Mandante"] == p else r[
-                                "Visitante FT"]) >= 2.5,
-                            "weight": 1.5
-                        },
-                        "⚡ Over 1.5 HT": {
-                            "condition": lambda r, _: r["Total HT"] > 1.5,
-                            "weight": 1.0
-                        },
-                        "⚡ Over 2.5 HT": {
-                            "condition": lambda r, _: r["Total HT"] > 2.5,
-                            "weight": 1.3
-                        },
-                        "🔥 Over 2.5 FT": {
-                            "condition": lambda r, _: r["Total FT"] > 2.5,
-                            "weight": 1.4
-                        },
-                        "💥 Over 3.5 FT": {
-                            "condition": lambda r, _: r["Total FT"] > 3.5,
-                            "weight": 1.6
-                        },
-                        "🔀 BTTS FT": {
-                            "condition": lambda r, _: (r["Mandante FT"] > 0) & (r["Visitante FT"] > 0),
-                            "weight": 1.1
-                        }
-                    }
-
-                    for market_name, config_market in markets.items():
-                        seq = current_seq = hits = 0
-                        for _, row in player_matches.iterrows():
-                            if config_market["condition"](row, player):
-                                current_seq += 1
-                                seq = max(seq, current_seq)
-                                hits += 1
-                            else:
-                                current_seq = 0
-
-                        success_rate = (hits / len(player_matches)) * 100 if len(player_matches) > 0 else 0
-
-                        if seq >= config["min_sequencia"] and success_rate >= config["min_sucesso"]:
-                            score = seq * config_market["weight"] * (success_rate / 100)
-                            sequences_data.append({
-                                "Jogador": player,
-                                "Sequência": seq,
-                                "Mercado": market_name,
-                                "Taxa": f"{success_rate:.0f}%",
-                                "Liga": player_matches.iloc[0]["Liga"],
-                                "Score": score,
-                                "Jogos Analisados": len(player_matches),
-                                "Último Jogo": player_matches.iloc[0]["Data"]
-                            })
-
-                if sequences_data:
-                    df = pd.DataFrame(sequences_data)
-                    df_sorted = df.sort_values(["Score", "Último Jogo"], ascending=[False, False])
-
-                    st.markdown("### 🏆 Melhores Sequências")
-                    st.dataframe(
-                        df_sorted[["Jogador", "Mercado", "Sequência", "Taxa", "Liga", "Jogos Analisados"]],
-                        hide_index=True,
-                        use_container_width=True,
-                        height=500
-                    )
-
-                    st.markdown("### 💎 Dicas Estratégicas")
-                    for _, row in df_sorted.head(5).iterrows():
-                        st.success(
-                            f"**{row['Jogador']}** ({row['Liga']}): "
-                            f"{row['Sequência']} jogos consecutivos com {row['Mercado']} "
-                            f"({row['Taxa']} acerto) - **Score: {row['Score']:.1f}/10**"
+                        st.subheader("💎 Oportunidades Identificadas")
+                        st.dataframe(
+                            df_relatorios,
+                            use_container_width=True,
+                            height=400
                         )
-                else:
-                    st.info("Nenhuma sequência relevante encontrada nos últimos 20 jogos de cada liga.")
 
-    # Aba 5: Análise Manual
-    with tabs[4]:
-        st.header("🔍 Análise Manual de Confrontos e Desempenho Individual")
-        st.write(
-            "Insira os nomes dos jogadores para analisar seus confrontos diretos recentes e o desempenho individual nas últimas partidas.")
+                        csv = df_relatorios.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Exportar Alertas",
+                            data=csv,
+                            file_name='alertas_ia.csv',
+                            mime='text/csv'
+                        )
+                    else:
+                        st.info("Nenhuma oportunidade encontrada com os critérios atuais.")
 
-        if df_resultados.empty:
-            st.info("Carregando dados dos resultados para a análise manual...")
+            st.info("💡 **Dica:** Clique no botão acima para gerar analises com Alta Chances de Acertividades")
 
-        all_players = sorted([re.sub(r'^[🥇🥈🥉]\s', '', p) for p in
-                              df_stats_all_players["Jogador"].unique()]) if not df_stats_all_players.empty else []
-
-        col_p1, col_p2 = st.columns(2)
-        with col_p1:
-            player1_manual = st.selectbox(
-                "Jogador 1:",
-                [""] + all_players,
-                key="player1_manual"
-            )
-        with col_p2:
-            player2_manual = st.selectbox(
-                "Jogador 2:",
-                [""] + all_players,
-                key="player2_manual"
-            )
-
-        num_games_h2h = st.number_input(
-            "Número de últimos confrontos diretos a analisar (máx. 10):",
-            min_value=1,
-            max_value=10,
-            value=10,
-            key="num_games_h2h"
-        )
-
-        num_games_individual = st.number_input(
-            "Número de últimos jogos individuais a analisar (máx. 20):",
-            min_value=1,
-            max_value=20,
-            value=10,
-            key="num_games_individual"
-        )
-
-        if st.button("Analisar Confronto e Desempenho", key="analyze_button"):
-            if player1_manual and player2_manual:
-                if player1_manual == player2_manual:
-                    st.warning("Por favor, selecione jogadores diferentes.")
-                else:
-                    perform_manual_analysis(df_resultados, player1_manual, player2_manual, num_games_h2h,
-                                            num_games_individual)
-            else:
-                st.warning("Por favor, selecione ambos os jogadores.")
-
-    # Aba 6: Ganhos & Perdas
-    with tabs[5]:
-        st.header("💰 Ganhos & Perdas por Jogador")
-        if not df_stats_all_players.empty:
-            player_names_for_selectbox = sorted([
-                re.sub(r'^[🥇🥈🥉]\s', '', p)
-                for p in df_stats_all_players["Jogador"].unique()
-            ])
-            selected_player = st.selectbox(
-                "Selecione um Jogador para Análise:",
-                [""] + player_names_for_selectbox
-            )
-            if selected_player:
-                default_odds = st.slider(
-                    "Defina as odds médias para cálculo:",
-                    min_value=1.50,
-                    max_value=3.00,
-                    value=1.90,
-                    step=0.05
-                )
-                display_metrics_for_player(df_stats_all_players, selected_player, default_odds)
-            else:
-                st.info("Por favor, selecione um jogador para ver a análise.")
-        else:
-            st.info("Nenhum dado de jogador disponível para análise.")
-
-    # Aba 7: Salvar Jogos
-    with tabs[6]:
-        st.header("💾 Jogos Salvos - Análise")
-
-        if 'saved_games' not in st.session_state:
-            st.session_state.saved_games = pd.DataFrame(columns=[
-                'Hora', 'Liga', 'Mandante', 'Visitante',
-                'Sugestão HT', 'Sugestão FT', 'Data Salvamento'
-            ])
-
-        st.subheader("📊 Análise de Resultados")
-
-        if st.button("🔍 Atualizar Análise de Resultados", key="update_results_analysis"):
-            results = []
-            total_games = 0
-            ht_greens = 0
-            ht_reds = 0
-            ft_greens = 0
-            ft_reds = 0
-            total_ht_profit = 0.0
-            total_ft_profit = 0.0
-
-            for _, game in st.session_state.saved_games.iterrows():
-                game_date = game.get('Data do Jogo', None)
-
-                if not game_date or game_date == "Aguardando":
-                    result_data = df_resultados[
-                        (df_resultados['Mandante'] == game['Mandante']) &
-                        (df_resultados['Visitante'] == game['Visitante'])
-                        ]
-                    if not result_data.empty:
-                        game_date = result_data.iloc[0].get('Data', "Aguardando")
-
-                result_data = df_resultados[
-                    (df_resultados['Mandante'] == game['Mandante']) &
-                    (df_resultados['Visitante'] == game['Visitante'])
-                    ]
-
-                if not result_data.empty:
-                    latest_result = result_data.iloc[0]
-                    total_ht = latest_result.get('Mandante HT', 0) + latest_result.get('Visitante HT', 0)
-                    total_ft = latest_result.get('Mandante FT', 0) + latest_result.get('Visitante FT', 0)
-
-                    ht_profit = calculate_profit(game.get('Sugestão HT', ''), total_ht, odd=1.60)
-                    ft_profit = calculate_profit(game.get('Sugestão FT', ''), total_ft, odd=1.60)
-
-                    if ht_profit > 0:
-                        ht_greens += 1
-                    elif ht_profit < 0:
-                        ht_reds += 1
-                    if ft_profit > 0:
-                        ft_greens += 1
-                    elif ft_profit < 0:
-                        ft_reds += 1
-
-                    total_ht_profit += ht_profit
-                    total_ft_profit += ft_profit
-                    total_games += 1
-
-                    results.append({
-                        'Hora': game['Hora'],
-                        'Data do Jogo': latest_result.get('Data', game_date if game_date else "Aguardando"),
-                        'Jogo': f"{game['Mandante']} vs {game['Visitante']}",
-                        'Status': "✅ Finalizado",
-                        'Sugestão HT': game.get('Sugestão HT', 'N/A'),
-                        'Resultado HT': f"{latest_result.get('Mandante HT', '?')}-{latest_result.get('Visitante HT', '?')}",
-                        'Lucro HT': f"{ht_profit:.2f}u",
-                        'Sugestão FT': game.get('Sugestão FT', 'N/A'),
-                        'Resultado FT': f"{latest_result.get('Mandante FT', '?')}-{latest_result.get('Visitante FT', '?')}",
-                        'Lucro FT': f"{ft_profit:.2f}u"
-                    })
-                else:
-                    results.append({
-                        'Hora': game['Hora'],
-                        'Data do Jogo': game_date if game_date else "Aguardando",
-                        'Jogo': f"{game['Mandante']} vs {game['Visitante']}",
-                        'Status': "✅ Finalizado",
-                        'Sugestão HT': game.get('Sugestão HT', 'N/A'),
-                        'Resultado HT': "N/D",
-                        'Lucro HT': "0.00u",
-                        'Sugestão FT': game.get('Sugestão FT', 'N/A'),
-                        'Resultado FT': "N/D",
-                        'Lucro FT': "0.00u"
-                    })
-
-            if results:
-                df_results = pd.DataFrame(results)
-                df_results = df_results.sort_values('Data do Jogo', ascending=False)
-
-                def color_profit(val):
-                    if isinstance(val, str) and 'u' in val:
-                        num = float(val.replace('u', ''))
-                        if num > 0:
-                            return 'color: green; font-weight: bold;'
-                        elif num < 0:
-                            return 'color: red; font-weight: bold;'
-                    return ''
-
-                styled_df = df_results.style.map(color_profit, subset=['Lucro HT', 'Lucro FT'])
-                st.dataframe(styled_df, use_container_width=True, height=500)
-
-                if total_games > 0:
-                    odds_range = [1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00]
-                    projection_data = []
-
-                    for odd in odds_range:
-                        ht_profit = 0.0
-                        ft_profit = 0.0
-                        ht_greens = 0
-                        ht_reds = 0
-                        ft_greens = 0
-                        ft_reds = 0
-
-                        for _, game in st.session_state.saved_games.iterrows():
-                            result_data = df_resultados[
-                                (df_resultados['Mandante'] == game['Mandante']) &
-                                (df_resultados['Visitante'] == game['Visitante'])
-                                ]
-                            if not result_data.empty:
-                                latest_result = result_data.iloc[0]
-                                total_ht = latest_result.get('Mandante HT', 0) + latest_result.get('Visitante HT', 0)
-                                total_ft = latest_result.get('Mandante FT', 0) + latest_result.get('Visitante FT', 0)
-
-                                ht_p = calculate_profit(game.get('Sugestão HT', ''), total_ht, odd=odd)
-                                ft_p = calculate_profit(game.get('Sugestão FT', ''), total_ft, odd=odd)
-
-                                if ht_p > 0:
-                                    ht_greens += 1
-                                elif ht_p < 0:
-                                    ht_reds += 1
-                                if ft_p > 0:
-                                    ft_greens += 1
-                                elif ft_p < 0:
-                                    ft_reds += 1
-
-                                ht_profit += ht_p
-                                ft_profit += ft_p
-
-                        total_profit = ht_profit + ft_profit
-                        projection_data.append({
-                            'Odd': f"{odd:.2f}",
-                            'Total Jogos': total_games,
-                            'Greens HT': ht_greens,
-                            'Reds HT': ht_reds,
-                            'Greens FT': ft_greens,
-                            'Reds FT': ft_reds,
-                            'Lucro HT': f"{ht_profit:.2f}u",
-                            'Lucro FT': f"{ft_profit:.2f}u",
-                            'Lucro Total': f"{total_profit:.2f}u"
-                        })
-
-                    df_projection = pd.DataFrame(projection_data)
-
-                    styled_projection = df_projection.style.map(
-                        color_profit, subset=['Lucro HT', 'Lucro FT', 'Lucro Total']
-                    ).format({
-                        'Odd': '{}',
-                        'Total Jogos': '{:.0f}',
-                        'Greens HT': '{:.0f}',
-                        'Reds HT': '{:.0f}',
-                        'Greens FT': '{:.0f}',
-                        'Reds FT': '{:.0f}',
-                        'Lucro HT': '{}',
-                        'Lucro FT': '{}',
-                        'Lucro Total': '{}'
-                    })
-
-                    st.dataframe(styled_projection, use_container_width=True)
-
-                    st.markdown("### 📊 Resumo Geral")
-                    cols = st.columns(4)
-                    cols[0].metric("Total de Jogos Analisados", total_games)
-                    cols[1].metric("Greens HT", ht_greens)
-                    cols[2].metric("Reds HT", ht_reds)
-                    cols[3].metric("Lucro HT (Odd 1.60)", f"{total_ht_profit:.2f}u")
-                    cols = st.columns(4)
-                    cols[0].metric("Total de Jogos Analisados", total_games)
-                    cols[1].metric("Greens FT", ft_greens)
-                    cols[2].metric("Reds FT", ft_reds)
-                    cols[3].metric("Lucro FT (Odd 1.60)", f"{total_ft_profit:.2f}u")
-                    cols = st.columns(2)
-                    cols[0].metric("Lucro Combinado (Odd 1.60)", f"{total_ht_profit + total_ft_profit:.2f}u")
-
-                else:
-                    st.info("Nenhum jogo finalizado para calcular projeção de ganhos.")
-
-            else:
-                st.info("Nenhum resultado encontrado para análise.")
-
-        st.subheader("📋 Jogos Salvos")
-        if st.session_state.saved_games.empty:
-            st.info("Nenhum jogo salvo ainda. Selecione jogos da aba 'Ao Vivo' para salvá-los aqui.")
-        else:
-            st.dataframe(st.session_state.saved_games, use_container_width=True, height=400)
-            if st.button("🗑️ Limpar Todos os Jogos Salvos", key="clear_all_saved"):
-                st.session_state.saved_games = pd.DataFrame(columns=[
-                    'Hora', 'Liga', 'Mandante', 'Visitante',
-                    'Sugestão HT', 'Sugestão FT', 'Data Salvamento'
-                ])
-                st.success("Todos os jogos salvos foram removidos!")
-                st.rerun()
-            csv = st.session_state.saved_games.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Exportar Jogos Salvos",
-                data=csv,
-                file_name='jogos_salvos.csv',
-                mime='text/csv'
-            )
-
-    with tabs[7]:  # Agora a aba 7 é "Resultados"
+    # Aba 4: Resultados
+    with tabs[3]:
         st.header("📊 Resultados Históricos")
 
         if df_resultados.empty:
             st.warning("Nenhum dado de resultados disponível no momento.")
         else:
-            # Filtros
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
             with col1:
                 ligas_disponiveis = df_resultados['Liga'].unique()
                 liga_selecionada = st.selectbox(
@@ -1883,667 +1772,60 @@ def fifalgorithm_app():
                     options=['Todas'] + list(ligas_disponiveis),
                     index=0
                 )
-
             with col2:
-                jogadores_disponiveis = sorted(
-                    list(set(df_resultados['Mandante'].unique()) | set(df_resultados['Visitante'].unique())))
-                jogador_selecionado = st.selectbox(
-                    'Filtrar por Jogador:',
-                    options=['Todos'] + jogadores_disponiveis,
-                    index=0
-                )
-
-            with col3:
                 num_jogos = st.slider(
-                    'Número de jogos a exibir:',
+                    'Jogos a exibir:',
                     min_value=10,
-                    max_value=500,
-                    value=100,
+                    max_value=200,
+                    value=50,
                     step=10
                 )
 
-            # Aplicar filtros
             df_filtrado = df_resultados.copy()
             if liga_selecionada != 'Todas':
                 df_filtrado = df_filtrado[df_filtrado['Liga'] == liga_selecionada]
-            if jogador_selecionado != 'Todos':
-                df_filtrado = df_filtrado[
-                    (df_filtrado['Mandante'] == jogador_selecionado) |
-                    (df_filtrado['Visitante'] == jogador_selecionado)
-                    ]
-
             df_filtrado = df_filtrado.sort_values('Data', ascending=False).head(num_jogos)
 
-            # Mostrar estatísticas resumidas
-            st.subheader("📈 Estatísticas Resumidas")
             if not df_filtrado.empty:
+                st.subheader("📈 Performance Geral")
+
                 total_jogos = len(df_filtrado)
                 avg_gols_ht = df_filtrado['Total HT'].mean()
                 avg_gols_ft = df_filtrado['Total FT'].mean()
                 over_25_ft = (df_filtrado['Total FT'] > 2.5).mean() * 100
-                over_15_ht = (df_filtrado['Total HT'] > 1.5).mean() * 100
                 btts_ft = ((df_filtrado['Mandante FT'] > 0) & (df_filtrado['Visitante FT'] > 0)).mean() * 100
+                over_15_ht = (df_filtrado['Total HT'] > 1.5).mean() * 100
 
                 cols = st.columns(5)
-                cols[0].metric("Total de Jogos", total_jogos)
+                cols[0].metric("Jogos", total_jogos)
                 cols[1].metric("Média Gols HT", f"{avg_gols_ht:.2f}")
                 cols[2].metric("Média Gols FT", f"{avg_gols_ft:.2f}")
                 cols[3].metric("Over 2.5 FT", f"{over_25_ft:.1f}%")
-                cols[4].metric("BTTS FT", f"{btts_ft:.1f}%")
+                cols[4].metric("Over 1.5 HT", f"{over_15_ht:.1f}%")
 
-            # Mostrar tabela de resultados
             st.subheader("📋 Últimos Resultados")
 
-            # Selecionar colunas para exibição
-            colunas_exibicao = [
+            colunas_completas = [
                 'Data', 'Liga', 'Mandante', 'Visitante',
                 'Mandante HT', 'Visitante HT', 'Total HT',
                 'Mandante FT', 'Visitante FT', 'Total FT'
             ]
 
-            # Configurar AgGrid
-            gb = GridOptionsBuilder.from_dataframe(df_filtrado[colunas_exibicao])
-            gb.configure_default_column(
-                flex=1,
-                minWidth=100,
-                wrapText=True,
-                autoHeight=True,
-                resizable=True
+            colunas_existentes = [col for col in colunas_completas if col in df_filtrado.columns]
+
+            st.dataframe(
+                df_filtrado[colunas_existentes],
+                use_container_width=True,
+                height=400
             )
 
-            # Configurar paginação
-            gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=20)
-
-            # Configurar filtros
-            for col in colunas_exibicao:
-                gb.configure_column(col, header_name=col, filter=True)
-
-            grid_options = gb.build()
-
-            # Exibir tabela
-            AgGrid(
-                df_filtrado[colunas_exibicao],
-                gridOptions=grid_options,
-                height=600,
-                width='100%',
-                fit_columns_on_grid_load=False,
-                theme='streamlit',
-                update_mode=GridUpdateMode.MODEL_CHANGED,
-                allow_unsafe_jscode=True
-            )
-
-            # Botão para download
-            csv = df_filtrado[colunas_exibicao].to_csv(index=False).encode('utf-8')
+            csv = df_filtrado[colunas_existentes].to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Exportar Resultados",
                 data=csv,
                 file_name='resultados_fifa.csv',
                 mime='text/csv'
             )
-
-    with tabs[8]:  # Nova aba "Relatórios"
-        st.header("📈 Relatórios de Oportunidades (Confrontos Diretos)")
-        st.write(
-            "Analisa apenas confrontos diretos com histórico de pelo menos 5 jogos para identificar as melhores oportunidades")
-
-        if df_live_clean.empty or df_resultados.empty:
-            st.warning("Dados insuficientes para gerar relatórios. Aguarde a atualização.")
-        else:
-            # Configurações mais rigorosas
-            MIN_JOGOS_CONFRONTO = 5
-            MIN_PORCENTAGEM = 75  # Aumentado para 75% conforme solicitado
-            MAX_SUGESTOES_POR_PARTIDA = 8  # Limite de sugestões por partida
-
-            # Definindo todos os mercados solicitados com seus respectivos critérios
-            TIPOS_APOSTA = {
-                "Vencedor da Partida": {
-                    "col": "Vencedor",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "p1_wins": len(df[((df["Mandante"] == p1) & (df["Mandante FT"] > df["Visitante FT"])) |
-                                          ((df["Visitante"] == p1) & (df["Visitante FT"] > df["Mandante FT"]))]),
-                        "p2_wins": len(df[((df["Mandante"] == p2) & (df["Mandante FT"] > df["Visitante FT"])) |
-                                          ((df["Visitante"] == p2) & (df["Visitante FT"] > df["Mandante FT"]))]),
-                        "draws": len(df[df["Mandante FT"] == df["Visitante FT"]])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 1  # Prioridade mais alta
-                },
-                "Over 1.5 Jogador": {
-                    "col": "Over 1.5 Player",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "p1_hits": len(df[((df["Mandante"] == p1) & (df["Mandante FT"] >= 2)) |
-                                          ((df["Visitante"] == p1) & (df["Visitante FT"] >= 2))]),
-                        "p2_hits": len(df[((df["Mandante"] == p2) & (df["Mandante FT"] >= 2)) |
-                                          ((df["Visitante"] == p2) & (df["Visitante FT"] >= 2))])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 2
-                },
-                "Over 2.5 Jogador": {
-                    "col": "Over 2.5 Player",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "p1_hits": len(df[((df["Mandante"] == p1) & (df["Mandante FT"] >= 3)) |
-                                          ((df["Visitante"] == p1) & (df["Visitante FT"] >= 3))]),
-                        "p2_hits": len(df[((df["Mandante"] == p2) & (df["Mandante FT"] >= 3)) |
-                                          ((df["Visitante"] == p2) & (df["Visitante FT"] >= 3))])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 3
-                },
-                "BTTS HT": {
-                    "col": "BTTS HT",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante HT"] > 0) & (df["Visitante HT"] > 0)])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 4
-                },
-                "Over 2.5 HT": {
-                    "col": "Over 2.5 HT",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante HT"] + df["Visitante HT"]) > 2.5])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 5
-                },
-                "Over 3.5 FT": {
-                    "col": "Over 3.5",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante FT"] + df["Visitante FT"]) > 3.5])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 6
-                },
-                "Over 4.5 FT": {
-                    "col": "Over 4.5",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante FT"] + df["Visitante FT"]) > 4.5])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 7
-                },
-                "Over 5.5 FT": {
-                    "col": "Over 5.5",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante FT"] + df["Visitante FT"]) > 5.5])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 8
-                },
-                "Under 5.5 FT": {
-                    "col": "Under 5.5",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "hits": len(df[(df["Mandante FT"] + df["Visitante FT"]) < 5.5])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 9
-                },
-                "Under 2.5 Jogador": {
-                    "col": "Under 2.5 Player",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "p1_hits": len(df[((df["Mandante"] == p1) & (df["Mandante FT"] < 2.5)) |
-                                          ((df["Visitante"] == p1) & (df["Visitante FT"] < 2.5))]),
-                        "p2_hits": len(df[((df["Mandante"] == p2) & (df["Mandante FT"] < 2.5)) |
-                                          ((df["Visitante"] == p2) & (df["Visitante FT"] < 2.5))])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 10
-                },
-                "Under 3.5 Jogador": {
-                    "col": "Under 3.5 Player",
-                    "analysis": lambda df, p1, p2: {
-                        "total": len(df),
-                        "p1_hits": len(df[((df["Mandante"] == p1) & (df["Mandante FT"] < 3.5)) |
-                                          ((df["Visitante"] == p1) & (df["Visitante FT"] < 3.5))]),
-                        "p2_hits": len(df[((df["Mandante"] == p2) & (df["Mandante FT"] < 3.5)) |
-                                          ((df["Visitante"] == p2) & (df["Visitante FT"] < 3.5))])
-                    },
-                    "threshold": MIN_PORCENTAGEM,
-                    "priority": 11
-                }
-            }
-
-            # Obter hora atual
-            brasil_tz = pytz.timezone('America/Sao_Paulo')
-            hora_atual = datetime.now(brasil_tz).strftime("%H:%M")
-
-            # Processar cada jogo ao vivo FUTURO (hora > hora_atual)
-            relatorios = []
-            jogos_com_historico = 0
-
-            # Ordenar jogos ao vivo por hora (do mais próximo para o mais distante)
-            df_live_futuro = df_live_clean[df_live_clean['Hora'] > hora_atual].sort_values('Hora', ascending=True)
-
-            for _, jogo in df_live_futuro.iterrows():
-                p1 = jogo["Mandante"]
-                p2 = jogo["Visitante"]
-                liga = jogo["Liga"]
-                hora_jogo = jogo["Hora"]
-
-                # Filtrar jogos históricos entre esses jogadores
-                df_historico = df_resultados[
-                    ((df_resultados["Mandante"] == p1) & (df_resultados["Visitante"] == p2)) |
-                    ((df_resultados["Mandante"] == p2) & (df_resultados["Visitante"] == p1))
-                    ]
-
-                if len(df_historico) >= MIN_JOGOS_CONFRONTO:
-                    jogos_com_historico += 1
-
-                    # Dicionário para armazenar todas as oportunidades encontradas para esta partida
-                    oportunidades_partida = []
-
-                    # Analisar confrontos diretos para cada tipo de aposta
-                    for aposta, config in TIPOS_APOSTA.items():
-                        stats = config["analysis"](df_historico, p1, p2)
-                        threshold = config["threshold"]
-                        priority = config["priority"]
-
-                        if aposta == "Vencedor da Partida":
-                            p1_win_rate = (stats["p1_wins"] / stats["total"]) * 100 if stats["total"] > 0 else 0
-                            p2_win_rate = (stats["p2_wins"] / stats["total"]) * 100 if stats["total"] > 0 else 0
-                            draw_rate = (stats["draws"] / stats["total"]) * 100 if stats["total"] > 0 else 0
-
-                            if p1_win_rate >= threshold:
-                                oportunidades_partida.append({
-                                    "priority": priority,
-                                    "tipo": f"Vitória {p1}",
-                                    "stats": f"VENCEU {stats['p1_wins']} DE {stats['total']} JOGOS ({p1_win_rate:.0f}%)",
-                                    "confianca": "🟢 Alta" if p1_win_rate >= 80 else "🟡 Média"
-                                })
-                            if p2_win_rate >= threshold:
-                                oportunidades_partida.append({
-                                    "priority": priority,
-                                    "tipo": f"Vitória {p2}",
-                                    "stats": f"VENCEU {stats['p2_wins']} DE {stats['total']} JOGOS ({p2_win_rate:.0f}%)",
-                                    "confianca": "🟢 Alta" if p2_win_rate >= 80 else "🟡 Média"
-                                })
-                            if draw_rate >= threshold:
-                                oportunidades_partida.append({
-                                    "priority": priority,
-                                    "tipo": "Empate FT",
-                                    "stats": f"OCORREU {stats['draws']} DE {stats['total']} JOGOS ({draw_rate:.0f}%)",
-                                    "confianca": "🟢 Alta" if draw_rate >= 80 else "🟡 Média"
-                                })
-                        elif "Over" in aposta or "Under" in aposta:
-                            if "Jogador" in aposta:
-                                # Mercados por jogador (Over/Under)
-                                p1_hits = stats["p1_hits"]
-                                p2_hits = stats["p2_hits"]
-                                total = stats["total"]
-
-                                p1_rate = (p1_hits / total) * 100 if total > 0 else 0
-                                p2_rate = (p2_hits / total) * 100 if total > 0 else 0
-
-                                if p1_rate >= threshold:
-                                    oportunidades_partida.append({
-                                        "priority": priority,
-                                        "tipo": f"{aposta} - {p1}",
-                                        "stats": f"ACERTOU {p1_hits} DE {total} JOGOS ({p1_rate:.0f}%)",
-                                        "confianca": "🟢 Alta" if p1_rate >= 80 else "🟡 Média"
-                                    })
-                                if p2_rate >= threshold:
-                                    oportunidades_partida.append({
-                                        "priority": priority,
-                                        "tipo": f"{aposta} - {p2}",
-                                        "stats": f"ACERTOU {p2_hits} DE {total} JOGOS ({p2_rate:.0f}%)",
-                                        "confianca": "🟢 Alta" if p2_rate >= 80 else "🟡 Média"
-                                    })
-                            else:
-                                # Mercados gerais (Over/Under HT/FT)
-                                hits = stats["hits"]
-                                total = stats["total"]
-                                rate = (hits / total) * 100 if total > 0 else 0
-
-                                if rate >= threshold:
-                                    oportunidades_partida.append({
-                                        "priority": priority,
-                                        "tipo": aposta,
-                                        "stats": f"OCORREU EM {hits} DE {total} JOGOS ({rate:.0f}%)",
-                                        "confianca": "🟢 Alta" if rate >= 80 else "🟡 Média"
-                                    })
-                        else:
-                            # Outros mercados (BTTS HT)
-                            hits = stats["hits"]
-                            total = stats["total"]
-                            rate = (hits / total) * 100 if total > 0 else 0
-
-                            if rate >= threshold:
-                                oportunidades_partida.append({
-                                    "priority": priority,
-                                    "tipo": aposta,
-                                    "stats": f"OCORREU EM {hits} DE {total} JOGOS ({rate:.0f}%)",
-                                    "confianca": "🟢 Alta" if rate >= 80 else "🟡 Média"
-                                })
-
-                    # Ordenar oportunidades por prioridade e selecionar até 4 por partida
-                    oportunidades_partida.sort(key=lambda x: x["priority"])
-
-                    # Agrupar por tipo para evitar duplicatas
-                    tipos_unicos = set()
-                    oportunidades_filtradas = []
-
-                    for op in oportunidades_partida:
-                        tipo_base = op["tipo"].split(" - ")[0]  # Remove o nome do jogador para comparação
-                        if tipo_base not in tipos_unicos:
-                            tipos_unicos.add(tipo_base)
-                            oportunidades_filtradas.append(op)
-                            if len(oportunidades_filtradas) >= MAX_SUGESTOES_POR_PARTIDA:
-                                break
-
-                    # Adicionar ao relatório final
-                    for op in oportunidades_filtradas:
-                        relatorios.append({
-                            "Hora": hora_jogo,
-                            "Liga": liga,
-                            "Jogo": f"{p1} x {p2}",
-                            "Tipo Aposta": op["tipo"],
-                            "Estatística": op["stats"],
-                            "Confiança": op["confianca"],
-                            "Jogos Analisados": len(df_historico)
-                        })
-
-            # Resumo inicial
-            st.markdown(f"""
-            ### 🔍 Relatório de Análise (Próximos Jogos)
-            - **Hora atual:** {hora_atual}
-            - **Próximos jogos ao vivo analisados:** {len(df_live_futuro)}
-            - **Jogos com histórico suficiente (≥{MIN_JOGOS_CONFRONTO} confrontos diretos):** {jogos_com_historico}
-            - **Oportunidades identificadas:** {len(relatorios)}
-            - **Critério mínimo:** {MIN_PORCENTAGEM}% de acerto histórico
-            """)
-
-            if relatorios:
-                df_relatorios = pd.DataFrame(relatorios)
-
-                # Ordenar por hora do jogo (do mais próximo para o mais distante)
-                df_relatorios = df_relatorios.sort_values("Hora", ascending=True)
-
-                # Agrupar por jogo com expanders
-                st.subheader("🎯 Melhores Oportunidades nos Próximos Jogos")
-                for jogo in df_relatorios["Jogo"].unique():
-                    df_jogo = df_relatorios[df_relatorios["Jogo"] == jogo]
-                    hora_jogo = df_jogo["Hora"].iloc[0]
-                    liga_jogo = df_jogo["Liga"].iloc[0]
-
-                    with st.expander(f"⚽ {jogo} | {liga_jogo} | Hora: {hora_jogo} | {len(df_jogo)} oportunidades"):
-                        for _, row in df_jogo.iterrows():
-                            st.success(
-                                f"**{row['Tipo Aposta']}**\n\n"
-                                f"- {row['Estatística']}\n"
-                                f"- Confiança: {row['Confiança']}\n"
-                                f"- Jogos analisados: {row['Jogos Analisados']}"
-                            )
-
-                # Tabela detalhada
-                st.subheader("📋 Detalhes de Todas as Oportunidades (Ordenadas por Hora)")
-                st.dataframe(
-                    df_relatorios,
-                    column_config={
-                        "Jogos Analisados": st.column_config.NumberColumn(format="%d jogos")
-                    },
-                    use_container_width=True,
-                    height=600
-                )
-
-                # Botão para exportar
-                csv = df_relatorios.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Exportar Relatórios Completos",
-                    data=csv,
-                    file_name='relatorios_proximos_jogos.csv',
-                    mime='text/csv',
-                    help="Exporta todas as oportunidades identificadas para um arquivo CSV"
-                )
-            else:
-                st.info("""
-                Nenhuma oportunidade de aposta identificada nos próximos jogos com base nos critérios:
-                - Mínimo de 5 confrontos diretos históricos
-                - Porcentagem de acerto acima de 72% para cada mercado
-                - Máximo de 4 sugestões por partida, evitando repetições de mercados
-                """)
-
-
-# ==============================================
-# FUNÇÕES AUXILIARES PARA ANÁLISE
-# ==============================================
-
-def perform_manual_analysis(df_resultados: pd.DataFrame, player1: str, player2: str, num_games_h2h: int,
-                            num_games_individual: int):
-    """Realiza análise manual entre dois jogadores"""
-    st.subheader(f"Análise Manual para **{player1}** vs **{player2}**")
-
-    if df_resultados.empty:
-        st.warning("⚠️ Não há dados de resultados históricos disponíveis para análise.")
-        return
-
-    player1_clean = re.sub(r'^[🥇🥈🥉]\s', '', player1)
-    player2_clean = re.sub(r'^[🥇🥈🥉]\s', '', player2)
-
-    st.markdown("---")
-    st.header("📈 Desempenho Individual Recente")
-    col_p1_stats, col_p2_stats = st.columns(2)
-
-    stats_p1_recent = get_recent_player_stats(df_resultados, player1_clean, num_games_individual)
-    stats_p2_recent = get_recent_player_stats(df_resultados, player2_clean, num_games_individual)
-
-    def display_individual_stats(player_name_display: str, stats: dict):
-        if not stats:
-            st.info(f"Não há dados recentes para **{player_name_display}** nos últimos {num_games_individual} jogos.")
-            return
-
-        st.markdown(f"### **{player_name_display}** (Últimos {stats['jogos_recentes']} jogos)")
-        st.metric("Total de Jogos Analisados", stats['jogos_recentes'])
-
-        st.write("**Força de Ataque (Média Gols Marcados):**")
-        st.info(f"**FT:** {stats['media_gols_marcados_ft']:.2f} gols/jogo")
-        st.info(f"**HT:** {stats['media_gols_marcados_ht']:.2f} gols/jogo")
-
-        st.write("**Força de Defesa (Média Gols Sofridos):**")
-        st.success(f"**FT:** {stats['media_gols_sofridos_ft']:.2f} gols/jogo")
-        st.success(f"**HT:** {stats['media_gols_sofridos_ht']:.2f} gols/jogo")
-
-        st.write("**Tendências de Gols:**")
-        st.markdown(f"- **Over 0.5 HT:** {stats['pct_over_05_ht']:.2f}% dos jogos")
-        st.markdown(f"- **Over 1.5 HT:** {stats['pct_over_15_ht']:.2f}% dos jogos")
-        st.markdown(f"- **Over 2.5 HT:** {stats['pct_over_25_ht']:.2f}% dos jogos")
-        st.markdown(f"- **Over 2.5 FT:** {stats['pct_over_25_ft']:.2f}% dos jogos")
-        st.markdown(f"- **Under 2.5 FT:** {stats['pct_under_25_ft']:.2f}% dos jogos")
-        st.markdown(f"- **BTTS FT:** {stats['pct_btts_ft']:.2f}% dos jogos")
-
-        st.write("**Sequências Atuais:**")
-        st.markdown(f"- Vitórias: {stats['sequencia_vitorias']} jogo(s)")
-        st.markdown(f"- Derrotas: {stats['sequencia_derrotas']} jogo(s)")
-        st.markdown(f"- Empates: {stats['sequencia_empates']} jogo(s)")
-        st.markdown(f"- BTTS FT: {stats['sequencia_btts']} jogo(s) seguidos")
-        st.markdown(f"- Over 2.5 FT: {stats['sequencia_over_25_ft']} jogo(s) seguidos")
-
-        st.write("**Gols Marcados HT vs FT:**")
-        if stats['media_gols_marcados_ht'] > stats['media_gols_marcados_ft'] / 2:
-            st.warning("Parece que marca mais gols no **Primeiro Tempo**.")
-        else:
-            st.warning("Parece que se destaca mais marcando gols no **Segundo Tempo**.")
-
-    with col_p1_stats:
-        display_individual_stats(player1, stats_p1_recent)
-
-    with col_p2_stats:
-        display_individual_stats(player2, stats_p2_recent)
-
-    st.markdown("---")
-    st.header("⚔️ Confrontos Diretos Recentes")
-
-    filtered_df_p1_p2 = df_resultados[
-        ((df_resultados["Mandante"] == player1_clean) & (df_resultados["Visitante"] == player2_clean)) |
-        ((df_resultados["Mandante"] == player2_clean) & (df_resultados["Visitante"] == player1_clean))
-        ].tail(num_games_h2h)
-
-    if filtered_df_p1_p2.empty:
-        st.info(
-            f"Não foram encontrados jogos recentes entre **{player1}** e **{player2}** nos últimos **{num_games_h2h}** confrontos diretos.")
-        return
-
-    st.write(f"Últimos **{len(filtered_df_p1_p2)}** confrontos diretos:")
-    st.dataframe(filtered_df_p1_p2[
-                     ["Data", "Liga", "Mandante", "Visitante", "Mandante FT", "Visitante FT", "Mandante HT",
-                      "Visitante HT"]], use_container_width=True)
-
-    total_gols_ht_h2h = filtered_df_p1_p2["Total HT"].sum()
-    total_gols_ft_h2h = filtered_df_p1_p2["Total FT"].sum()
-
-    media_gols_ht_confronto = total_gols_ht_h2h / len(filtered_df_p1_p2) if len(filtered_df_p1_p2) > 0 else 0
-    media_gols_ft_confronto = total_gols_ft_h2h / len(filtered_df_p1_p2) if len(filtered_df_p1_p2) > 0 else 0
-
-    st.markdown("---")
-    st.subheader("Média de Gols no Confronto Direto:")
-    col_mg_ht, col_mg_ft = st.columns(2)
-    col_mg_ht.metric("Média de Gols HT", f"{media_gols_ht_confronto:.2f}")
-    col_mg_ft.metric("Média de Gols FT", f"{media_gols_ft_confronto:.2f}")
-
-    st.markdown("---")
-    st.header("🎯 Dicas de Apostas para esta Partida:")
-
-    best_line_ht = sugerir_over_ht(media_gols_ht_confronto)
-    best_line_ft = sugerir_over_ft(media_gols_ft_confronto)
-
-    st.markdown(f"**Sugestão HT:** **{best_line_ht}**")
-    st.markdown(f"**Sugestão FT:** **{best_line_ft}**")
-
-    if stats_p1_recent.get('pct_btts_ft', 0) >= 60 and stats_p2_recent.get('pct_btts_ft', 0) >= 60:
-        btts_confronto_hits = ((filtered_df_p1_p2["Mandante FT"] > 0) & (filtered_df_p1_p2["Visitante FT"] > 0)).sum()
-        btts_confronto_percent = (btts_confronto_hits / len(filtered_df_p1_p2)) * 100 if len(
-            filtered_df_p1_p2) > 0 else 0
-        if btts_confronto_percent >= 60:
-            st.markdown(
-                f"**Sugestão Adicional:** **Ambos Marcam (BTTS FT)** com {btts_confronto_percent:.2f}% de acerto nos confrontos diretos.")
-
-    st.markdown("---")
-
-
-def display_metrics_for_player(df_player_stats: pd.DataFrame, player_name: str, default_odds: float = 1.90):
-    """Calcula e exibe métricas de ganhos/perdas para um jogador"""
-    cleaned_player_name = re.sub(r'^[🥇🥈🥉]\s', '', player_name)
-    player_data_row = df_player_stats[df_player_stats["Jogador"] == cleaned_player_name]
-
-    if player_data_row.empty:
-        st.info(f"Não há dados suficientes para calcular Ganhos & Perdas para {player_name}.")
-        return
-
-    player_data = player_data_row.iloc[0]
-    jogos_total = player_data["jogos_total"]
-
-    st.subheader(f"Estatísticas para {player_name} (Total de Jogos: {jogos_total})")
-
-    if jogos_total == 0:
-        st.info(f"Não há jogos registrados para {player_name}.")
-        return
-
-    market_data = [
-        {
-            "Mercado": "Vitória do Jogador",
-            "Acertos": player_data["vitorias"],
-            "Jogos": jogos_total
-        },
-        {
-            "Mercado": "Jogos Over 1.5 HT",
-            "Acertos": player_data["over_15_ht_hits"],
-            "Jogos": jogos_total
-        },
-        {
-            "Mercado": "Jogos Over 2.5 FT",
-            "Acertos": player_data["over_25_ft_hits"],
-            "Jogos": jogos_total
-        },
-        {
-            "Mercado": "Jogos BTTS FT",
-            "Acertos": player_data["btts_ft_hits"],
-            "Jogos": jogos_total
-        }
-    ]
-
-    results = []
-    for market in market_data:
-        hits = market["Acertos"]
-        total_games = market["Jogos"]
-        hit_rate = (hits / total_games) * 100 if total_games > 0 else 0
-        profit_loss = (hits * (default_odds - 1)) - ((total_games - hits) * 1)
-
-        results.append({
-            "Mercado": market["Mercado"],
-            "Jogos Analisados": total_games,
-            "Acertos": hits,
-            "Taxa de Acerto (%)": hit_rate,
-            "Lucro/Prejuízo (Unidades)": profit_loss
-        })
-
-    df_results = pd.DataFrame(results)
-
-    styled_df = df_results.style.map(
-        lambda x: 'color: green; font-weight: bold;' if isinstance(x, (int, float)) and x > 0 else
-        ('color: red; font-weight: bold;' if isinstance(x, (int, float)) and x < 0 else ''),
-        subset=['Lucro/Prejuízo (Unidades)']
-    ).format({
-        'Taxa de Acerto (%)': "{:.2f}%",
-        'Lucro/Prejuízo (Unidades)': "{:.2f}"
-    })
-
-    st.dataframe(styled_df, use_container_width=True)
-
-    st.markdown("---")
-    st.subheader("📊 Análise de Mercados para este Jogador:")
-
-    df_top_tips = df_results[df_results["Mercado"].isin([
-        "Vitória do Jogador",
-        "Jogos Over 1.5 HT",
-        "Jogos Over 2.5 FT",
-        "Jogos BTTS FT"
-    ])].copy()
-
-    df_top_tips = df_top_tips.sort_values("Lucro/Prejuízo (Unidades)", ascending=False)
-
-    for _, row in df_top_tips.iterrows():
-        profit = row["Lucro/Prejuízo (Unidades)"]
-        hit_rate = row["Taxa de Acerto (%)"]
-
-        if profit > 0:
-            st.success(
-                f"✅ **{row['Mercado']}**: "
-                f"Lucrativo com {hit_rate:.2f}% de acerto. "
-                f"Lucro esperado: **{profit:.2f} unidades** "
-                f"(em {row['Jogos Analisados']} jogos)"
-            )
-        else:
-            st.error(
-                f"❌ **{row['Mercado']}**: "
-                f"Prejuízo com {hit_rate:.2f}% de acerto. "
-                f"Perda esperada: **{profit:.2f} unidades** "
-                f"(em {row['Jogos Analisados']} jogos)"
-            )
-
-
-def calculate_profit(suggestion, actual_score, odd=1.60):
-    """Calcula o lucro/prejuízo de uma aposta"""
-    if not suggestion or suggestion == "Sem Entrada":
-        return 0.0
-    try:
-        if "Over" in suggestion:
-            required = float(suggestion.split()[1])
-            if actual_score > required:
-                return odd - 1  # Ganho
-            else:
-                return -1  # Perda
-    except:
-        return 0.0
-    return 0.0
 
 
 # ==============================================
@@ -2552,27 +1834,18 @@ def calculate_profit(suggestion, actual_score, odd=1.60):
 
 def main():
     """Função principal que controla o fluxo do aplicativo"""
-    # Configuração inicial da página
-    st.set_page_config(page_title="FIFAlgorithm", layout="wide")
+    try:
+        # Inicializar session state
+        if "authenticated" not in st.session_state:
+            st.session_state.authenticated = False
+        if "tipo_acesso" not in st.session_state:
+            st.session_state.tipo_acesso = "teste"
 
-    # Inicializa o sistema de atualização automática
-    if 'last_update_time' not in st.session_state:
-        st.session_state.last_update_time = time.time()
+        fifalgorithm_app()
 
-    # Verifica se é hora de atualizar
-    if time.time() - st.session_state.last_update_time > UPDATE_INTERVAL:
-        st.session_state.last_update_time = time.time()
-        st.session_state.force_update = True
-        st.rerun()
-
-    # Inicializa a sessão como autenticada diretamente
-    st.session_state.update({
-        "authenticated": True,
-        "current_tab": "⚡️ Ao Vivo"
-    })
-
-    # Executa o aplicativo principal
-    fifalgorithm_app()
+    except Exception as e:
+        st.error(f"Erro crítico no aplicativo: {str(e)}")
+        st.info("Tente recarregar a página ou verificar sua conexão com a internet.")
 
 
 if __name__ == "__main__":
