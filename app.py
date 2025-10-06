@@ -890,7 +890,7 @@ def tela_login():
 
         st.markdown('<div class="plan-card">', unsafe_allow_html=True)
         st.markdown("### 🏆 Plano 7 Dias")
-        st.markdown("### 💰 R$ 50,00")
+        st.markdown("### 💰 R$ 35,00")
         st.markdown("""
         - ✅ Acesso completo ao sistema
         - ✅ Dados em tempo real
