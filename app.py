@@ -10,13 +10,12 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 import re
-from datetime import datetime
 import logging
 from typing import Optional
 import time
 from collections import defaultdict
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
-import threading  # ADICIONANDO A IMPORTAÇÃO FALTANTE
+import threading
 
 # ==============================================
 # CONFIGURAÇÕES INICIAIS
@@ -29,11 +28,12 @@ DATA_DIR.mkdir(exist_ok=True)
 KEYS_FILE = DATA_DIR / "keys.json"
 USAGE_FILE = DATA_DIR / "usage.json"
 SALES_FILE = DATA_DIR / "sales.json"
+USERS_FILE = DATA_DIR / "users.json"
 
 # Configurações de pagamento PIX
 PIX_CPF = "01905990065"
 WHATSAPP_NUM = "5549991663166"
-WHATSAPP_MSG = "Olá! Envio comprovante do FIFAlgorithm"
+WHATSAPP_MSG = "Olá! Acabei de fazer o pagamento do FIFAlgorithm. Segue comprovante:"
 
 # Configuração de log
 logging.basicConfig(level=logging.INFO)
@@ -59,6 +59,128 @@ last_update_time = time.time()
 manual_update_active_until = 0
 update_thread_started = False
 
+
+# ==============================================
+# SISTEMA DE AUTENTICAÇÃO E USUÁRIOS
+# ==============================================
+
+def carregar_usuarios():
+    """Carrega os usuários do arquivo JSON"""
+    try:
+        if USERS_FILE.exists():
+            with open(USERS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.error(f"Erro ao carregar usuários: {e}")
+    return {}
+
+
+def salvar_usuarios(usuarios):
+    """Salva os usuários no arquivo JSON"""
+    try:
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(usuarios, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao salvar usuários: {e}")
+        return False
+
+
+def verificar_acesso(email):
+    """Verifica se o usuário tem acesso válido"""
+    usuarios = carregar_usuarios()
+
+    if email in usuarios:
+        user_data = usuarios[email]
+
+        # Verificar se está bloqueado
+        if user_data.get('bloqueado', False):
+            return False, "Usuário bloqueado"
+
+        # Verificar se o acesso expirou
+        data_expiracao = datetime.fromisoformat(user_data['data_expiracao'])
+        if datetime.now() > data_expiracao:
+            return False, "Acesso expirado"
+
+        return True, "Acesso válido"
+
+    return False, "Usuário não encontrado"
+
+
+def criar_usuario(email, dias=7):
+    """Cria um novo usuário com acesso por X dias"""
+    usuarios = carregar_usuarios()
+
+    data_criacao = datetime.now()
+    data_expiracao = data_criacao + timedelta(days=dias)
+
+    usuarios[email] = {
+        'email': email,
+        'data_criacao': data_criacao.isoformat(),
+        'data_expiracao': data_expiracao.isoformat(),
+        'plano': f"{dias} dias",
+        'bloqueado': False,
+        'ultimo_acesso': datetime.now().isoformat()
+    }
+
+    if salvar_usuarios(usuarios):
+        return True
+    return False
+
+
+def bloquear_usuario(email):
+    """Bloqueia um usuário"""
+    usuarios = carregar_usuarios()
+    if email in usuarios:
+        usuarios[email]['bloqueado'] = True
+        return salvar_usuarios(usuarios)
+    return False
+
+
+def desbloquear_usuario(email):
+    """Desbloqueia um usuário"""
+    usuarios = carregar_usuarios()
+    if email in usuarios:
+        usuarios[email]['bloqueado'] = False
+        return salvar_usuarios(usuarios)
+    return False
+
+
+def excluir_usuario(email):
+    """Exclui um usuário"""
+    usuarios = carregar_usuarios()
+    if email in usuarios:
+        del usuarios[email]
+        return salvar_usuarios(usuarios)
+    return False
+
+
+def atualizar_ultimo_acesso(email):
+    """Atualiza o último acesso do usuário"""
+    usuarios = carregar_usuarios()
+    if email in usuarios:
+        usuarios[email]['ultimo_acesso'] = datetime.now().isoformat()
+        salvar_usuarios(usuarios)
+
+
+def adicionar_usuario_manual():
+    """Função para adicionar usuário manualmente no painel admin"""
+    st.subheader("👤 Adicionar Usuário Manualmente")
+
+    with st.form("add_user_form"):
+        email = st.text_input("Email do usuário")
+        dias = st.number_input("Dias de acesso", min_value=1, max_value=365, value=7)
+
+        if st.form_submit_button("➕ Adicionar Usuário"):
+            if email:
+                if criar_usuario(email, dias):
+                    st.success(f"Usuário {email} adicionado com {dias} dias de acesso!")
+                else:
+                    st.error("Erro ao adicionar usuário")
+            else:
+                st.warning("Digite um email válido")
+
+
 # ==============================================
 # INICIALIZAÇÃO DO SESSION STATE
 # ==============================================
@@ -69,6 +191,13 @@ if 'jogador_selecionado' not in st.session_state:
     st.session_state.jogador_selecionado = None
 if 'n_jogos_analise' not in st.session_state:
     st.session_state.n_jogos_analise = 10
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+if 'user_email' not in st.session_state:
+    st.session_state.user_email = None
+if 'admin_mode' not in st.session_state:
+    st.session_state.admin_mode = False
+
 
 # ==============================================
 # FUNÇÕES AUXILIARES EXISTENTES
@@ -129,6 +258,7 @@ def calcular_estatisticas_jogador(df: pd.DataFrame, jogador: str, liga: str) -> 
 
     return s
 
+
 # ==============================================
 # SISTEMA DE ATUALIZAÇÃO
 # ==============================================
@@ -157,6 +287,7 @@ def start_auto_update():
         update_thread.start()
         update_thread_started = True
 
+
 def force_manual_update():
     """Ativa o modo de atualização manual por 60 minutos"""
     global manual_update_active_until, last_update_time
@@ -164,6 +295,7 @@ def force_manual_update():
     last_update_time = 0
     st.session_state["force_update"] = True
     st.session_state["manual_update_active"] = True
+
 
 def get_update_status():
     """Retorna o status atual da atualização"""
@@ -175,6 +307,7 @@ def get_update_status():
         return f"🔄 Boost Ativo - {minutes:02d}:{seconds:02d} restantes"
     else:
         return "🌎 Atualização Automática (5min)"
+
 
 # ==============================================
 # FUNÇÕES DE SCRAPING
@@ -190,6 +323,7 @@ def requisicao_segura(url: str, timeout: int = 15) -> Optional[requests.Response
         logger.error(f"Erro ao acessar {url}: {e}")
         st.error(f"❌ Erro de conexão com {url}: {e}")
         return None
+
 
 @st.cache_data(show_spinner=False, ttl=300)
 def extrair_dados_pagina(url: str) -> list[list[str]]:
@@ -209,6 +343,7 @@ def extrair_dados_pagina(url: str) -> list[list[str]]:
         logger.error(f"Erro ao processar HTML de {url}: {e}")
         st.error(f"❌ Erro ao processar dados de {url}")
         return []
+
 
 @st.cache_data(show_spinner=False, ttl=300)
 def buscar_resultados() -> pd.DataFrame:
@@ -296,6 +431,7 @@ def buscar_resultados() -> pd.DataFrame:
         logger.error(f"Erro ao processar resultados: {e}")
         st.error(f"❌ Erro ao processar dados de resultados")
         return pd.DataFrame()
+
 
 @st.cache_data(show_spinner=False, ttl=300)
 def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -427,6 +563,7 @@ def carregar_dados_ao_vivo(df_resultados: pd.DataFrame) -> tuple[pd.DataFrame, p
         logger.error(f"Erro ao carregar dados ao vivo: {e}")
         st.error(f"❌ Erro ao carregar e processar dados ao vivo.")
         return pd.DataFrame(), pd.DataFrame()
+
 
 # ==============================================
 # CSS PERSONALIZADO
@@ -637,8 +774,250 @@ st.markdown("""
         align-items: center;
         gap: 10px;
     }
+
+    .login-container {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 40px;
+        margin: 50px auto;
+        max-width: 500px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .plan-card {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 15px;
+        padding: 25px;
+        margin: 20px 0;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        transition: all 0.3s ease;
+    }
+
+    .plan-card:hover {
+        transform: translateY(-5px);
+        border-color: #667eea;
+    }
+
+    .pix-info {
+        background: linear-gradient(135deg, #32CD32, #228B22);
+        color: white;
+        padding: 20px;
+        border-radius: 15px;
+        margin: 15px 0;
+        text-align: center;
+    }
+
+    .whatsapp-button {
+        background: #25D366 !important;
+        color: white !important;
+        border: none !important;
+        padding: 15px 30px !important;
+        border-radius: 10px !important;
+        font-size: 16px !important;
+        cursor: pointer !important;
+        width: 100% !important;
+        text-align: center !important;
+        text-decoration: none !important;
+        display: inline-block !important;
+    }
+
+    .welcome-header {
+        text-align: center;
+        color: #ffffff !important;
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin-bottom: 10px;
+        padding: 20px;
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+    }
+    .welcome-subtitle {
+        text-align: center;
+        color: #cccccc;
+        font-size: 1.2rem;
+        margin-bottom: 30px;
+    }
+    .admin-access {
+        text-align: center;
+        margin-top: 20px;
+        padding: 15px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ==============================================
+# TELAS DE AUTENTICAÇÃO
+# ==============================================
+
+def tela_login():
+    """Tela de login e registro"""
+
+    # Mensagem de Bem Vindo em BRANCO
+    st.markdown('<div class="welcome-header">💀 Bem Vindo ao FIFAlgorithm!</div>', unsafe_allow_html=True)
+    st.markdown('<div class="welcome-subtitle">Sistema Profissional de Análise de E-soccer FIFA</div>',
+                unsafe_allow_html=True)
+
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+
+    # Abas para Login e Comprar Acesso
+    tab1, tab2, tab3 = st.tabs(["🔐 Login", "💳 Comprar Acesso", "👑 Admin"])
+
+    with tab1:
+        st.subheader("Acessar Sistema")
+        email = st.text_input("📧 Email cadastrado", placeholder="seu@email.com")
+
+        if st.button("🚀 Acessar Sistema", use_container_width=True):
+            if email:
+                valido, mensagem = verificar_acesso(email)
+                if valido:
+                    st.session_state.authenticated = True
+                    st.session_state.user_email = email
+                    atualizar_ultimo_acesso(email)
+                    st.success("✅ Login realizado com sucesso!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error(f"❌ {mensagem}")
+            else:
+                st.warning("⚠️ Por favor, digite seu email")
+
+    with tab2:
+        st.subheader("Adquirir Acesso")
+
+        st.markdown('<div class="plan-card">', unsafe_allow_html=True)
+        st.markdown("### 🏆 Plano 7 Dias")
+        st.markdown("### 💰 R$ 50,00")
+        st.markdown("""
+        - ✅ Acesso completo ao sistema
+        - ✅ Dados em tempo real
+        - ✅ Análises IA
+        - ✅ Radar de oportunidades
+        - ✅ Suporte prioritário
+        """)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        email_compra = st.text_input("📧 Seu email para acesso", placeholder="seu@email.com", key="email_compra")
+
+        if st.button("💸 Comprar Agora - 7 Dias", use_container_width=True, type="primary"):
+            if email_compra:
+                st.markdown('<div class="pix-info">', unsafe_allow_html=True)
+                st.markdown("### 💰 PAGAMENTO VIA PIX")
+                st.markdown(f"### **Chave PIX:** `{PIX_CPF}`")
+                st.markdown("### **Valor:** R$ 50,00")
+                st.markdown("### **Nome:** FIFAlgorithm")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                whatsapp_url = f"https://wa.me/{WHATSAPP_NUM}?text={WHATSAPP_MSG}"
+                st.markdown(
+                    f'<a href="{whatsapp_url}" target="_blank" class="whatsapp-button">📱 Abrir WhatsApp para Enviar Comprovante</a>',
+                    unsafe_allow_html=True)
+
+                st.warning("""
+                **📋 Instruções:**
+                1. Faça o PIX para a chave acima
+                2. Clique no botão verde para abrir o WhatsApp
+                3. Envie o comprovante de pagamento
+                4. Seu acesso será liberado em até 10 minutos
+                """)
+            else:
+                st.warning("⚠️ Por favor, digite seu email")
+
+    with tab3:
+        st.subheader("👑 Acesso Administrativo")
+        st.info("Área restrita para administradores do sistema")
+
+        admin_email = st.text_input("📧 Email administrativo", placeholder="vsembrani@gmail.com")
+        admin_senha = st.text_input("🔑 Senha administrativa", type="password", placeholder="Digite a senha")
+
+        if st.button("⚡ Acessar Painel Admin", use_container_width=True, type="primary"):
+            if admin_email == "vsembrani@gmail.com" and admin_senha == "FIFAdmin2024!":
+                st.session_state.admin_mode = True
+                st.session_state.authenticated = True
+                st.session_state.user_email = admin_email
+                st.success("✅ Acesso administrativo concedido!")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("❌ Credenciais administrativas inválidas!")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def painel_admin():
+    """Painel de controle administrativo"""
+    st.title("👑 Painel de Controle - FIFAlgorithm")
+
+    # Botão para voltar ao app principal
+    if st.button("⬅️ Voltar ao Sistema Principal"):
+        st.session_state.admin_mode = False
+        st.rerun()
+
+    usuarios = carregar_usuarios()
+
+    if not usuarios:
+        st.info("Nenhum usuário cadastrado.")
+        # Adicionar usuário padrão
+        if st.button("➕ Adicionar Usuário Padrão (vsembrani@gmail.com)"):
+            if criar_usuario("vsembrani@gmail.com", 365):
+                st.success("Usuário padrão adicionado com acesso de 365 dias!")
+                st.rerun()
+        return
+
+    st.subheader("📊 Usuários Cadastrados")
+
+    # Converter para DataFrame para exibição
+    users_data = []
+    for email, info in usuarios.items():
+        users_data.append({
+            'Email': email,
+            'Data Criação': datetime.fromisoformat(info['data_criacao']).strftime('%d/%m/%Y %H:%M'),
+            'Data Expiração': datetime.fromisoformat(info['data_expiracao']).strftime('%d/%m/%Y %H:%M'),
+            'Plano': info['plano'],
+            'Status': '❌ Bloqueado' if info.get('bloqueado', False) else '✅ Ativo',
+            'Último Acesso': datetime.fromisoformat(info['ultimo_acesso']).strftime('%d/%m/%Y %H:%M') if info.get(
+                'ultimo_acesso') else 'Nunca'
+        })
+
+    if users_data:
+        df_usuarios = pd.DataFrame(users_data)
+        st.dataframe(df_usuarios, use_container_width=True)
+
+        # Controles administrativos
+        st.subheader("⚙️ Gerenciar Usuários")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            email_bloquear = st.selectbox("Selecionar usuário para bloquear", [""] + list(usuarios.keys()))
+            if email_bloquear and st.button("🚫 Bloquear Usuário"):
+                if bloquear_usuario(email_bloquear):
+                    st.success(f"Usuário {email_bloquear} bloqueado!")
+                    st.rerun()
+
+        with col2:
+            email_desbloquear = st.selectbox("Selecionar usuário para desbloquear", [""] + list(usuarios.keys()),
+                                             key="desbloquear")
+            if email_desbloquear and st.button("✅ Desbloquear Usuário"):
+                if desbloquear_usuario(email_desbloquear):
+                    st.success(f"Usuário {email_desbloquear} desbloqueado!")
+                    st.rerun()
+
+        with col3:
+            email_excluir = st.selectbox("Selecionar usuário para excluir", [""] + list(usuarios.keys()), key="excluir")
+            if email_excluir and st.button("🗑️ Excluir Usuário"):
+                if excluir_usuario(email_excluir):
+                    st.success(f"Usuário {email_excluir} excluído!")
+                    st.rerun()
+
+        # Adicionar usuário manualmente
+        adicionar_usuario_manual()
+    else:
+        st.info("Nenhum usuário cadastrado.")
+
 
 # ==============================================
 # APLICATIVO PRINCIPAL
@@ -1115,6 +1494,7 @@ def fifalgorithm_app():
                 mime='text/csv'
             )
 
+
 # ==============================================
 # PONTO DE ENTRADA PRINCIPAL
 # ==============================================
@@ -1122,10 +1502,38 @@ def fifalgorithm_app():
 def main():
     """Função principal que controla o fluxo do aplicativo"""
     try:
-        fifalgorithm_app()
+        # Verificar autenticação normal
+        if not st.session_state.get('authenticated', False):
+            tela_login()
+        elif st.session_state.get('admin_mode', False):
+            painel_admin()
+        else:
+            # Mostrar informações do usuário
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                usuarios = carregar_usuarios()
+                user_email = st.session_state.user_email
+                if user_email in usuarios:
+                    user_data = usuarios[user_email]
+                    data_expiracao = datetime.fromisoformat(user_data['data_expiracao'])
+                    dias_restantes = (data_expiracao - datetime.now()).days
+                    st.write(f"👤 Logado como: **{user_email}** | 📅 Acesso expira em: **{dias_restantes} dias**")
+                else:
+                    st.write(f"👤 Logado como: **{user_email}**")
+
+            with col3:
+                if st.button("🚪 Sair"):
+                    st.session_state.authenticated = False
+                    st.session_state.user_email = None
+                    st.session_state.admin_mode = False
+                    st.rerun()
+
+            fifalgorithm_app()
+
     except Exception as e:
         st.error(f"Erro crítico no aplicativo: {str(e)}")
         st.info("Tente recarregar a página ou verificar sua conexão com a internet.")
+
 
 if __name__ == "__main__":
     main()

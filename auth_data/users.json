@@ -1,0 +1,18 @@
+{
+  "vsembrani@gmail.com": {
+    "email": "vsembrani@gmail.com",
+    "data_criacao": "2025-10-05T21:47:02.408426",
+    "data_expiracao": "2026-10-05T21:47:02.408426",
+    "plano": "365 dias",
+    "bloqueado": false,
+    "ultimo_acesso": "2025-10-05T21:47:02.408458"
+  },
+  "testefifa@gmail.com": {
+    "email": "testefifa@gmail.com",
+    "data_criacao": "2025-10-05T21:52:45.758110",
+    "data_expiracao": "2025-10-06T21:52:45.758110",
+    "plano": "1 dias",
+    "bloqueado": false,
+    "ultimo_acesso": "2025-10-05T21:53:16.762571"
+  }
+}
