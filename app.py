@@ -907,8 +907,8 @@ def tela_login():
                 st.markdown('<div class="pix-info">', unsafe_allow_html=True)
                 st.markdown("### 💰 PAGAMENTO VIA PIX")
                 st.markdown(f"### **Chave PIX:** `{PIX_CPF}`")
-                st.markdown("### **Valor:** R$ 50,00")
-                st.markdown("### **Nome:** FIFAlgorithm")
+                st.markdown("### **Valor:** R$ 35,00")
+                st.markdown("### **Nome:** FIFAlgorithm | Vagner")
                 st.markdown('</div>', unsafe_allow_html=True)
 
                 whatsapp_url = f"https://wa.me/{WHATSAPP_NUM}?text={WHATSAPP_MSG}"
