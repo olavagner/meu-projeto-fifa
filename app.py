@@ -4,8 +4,10 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import streamlit as st
 import re
+import numpy as np
+from scipy.stats import poisson
 from streamlit_autorefresh import st_autorefresh
-from typing import Tuple, Dict, List
+from typing import Dict, List
 
 URL = "https://www.aceodds.com/pt/bet365-transmissao-ao-vivo.html"
 URL_RESULTADOS = "https://www.fifastats.net/resultados"
@@ -23,6 +25,272 @@ ALLOWED_COMPETITIONS = {
 }
 
 
+class PoissonMonteCarloPredictor:
+    def __init__(self, num_simulacoes=5000):
+        self.num_simulacoes = num_simulacoes
+        self.max_gols = 8
+
+    def calcular_lambda_ponderado(self, jogador: str, confrontos: pd.DataFrame, forma: pd.DataFrame,
+                                  df_resultados: pd.DataFrame) -> float:
+        """Calcula lambda Poisson com pesos para confrontos + forma recente"""
+
+        # ANALISAR CONFRONTOS DIRETOS
+        if not confrontos.empty:
+            estat_confrontos = self.analisar_desempenho_jogos(jogador, confrontos)
+            lambda_confrontos = estat_confrontos['media_gols_feitos_ft']
+            peso_confrontos = min(0.5, 0.3 + (len(confrontos) * 0.04))
+        else:
+            lambda_confrontos = 0
+            peso_confrontos = 0
+
+        # ANALISAR FORMA RECENTE
+        estat_forma = self.analisar_desempenho_jogos(jogador, forma)
+        lambda_forma = estat_forma['media_gols_feitos_ft']
+        peso_forma = 0.35
+
+        # ANALISAR HISTÓRICO GERAL (base)
+        historico = self.obter_ultimos_jogos_gerais(jogador, df_resultados, 20)
+        estat_historico = self.analisar_desempenho_jogos(jogador, historico)
+        lambda_historico = estat_historico['media_gols_feitos_ft']
+        peso_historico = 0.15
+
+        # CALCULAR LAMBDA FINAL
+        pesos_total = peso_confrontos + peso_forma + peso_historico
+        if pesos_total > 0:
+            lambda_final = (
+                                   (lambda_confrontos * peso_confrontos) +
+                                   (lambda_forma * peso_forma) +
+                                   (lambda_historico * peso_historico)
+                           ) / pesos_total
+        else:
+            lambda_final = 1.5  # Default
+
+        return max(0.3, min(lambda_final, 3.5))
+
+    def analisar_desempenho_jogos(self, jogador: str, jogos: pd.DataFrame) -> Dict:
+        """Analisa desempenho em um conjunto de jogos"""
+        if jogos.empty:
+            return {'media_gols_feitos_ft': 1.5, 'media_gols_sofridos_ft': 1.5}
+
+        gols_feitos = 0
+        gols_sofridos = 0
+
+        for _, jogo in jogos.iterrows():
+            eh_mandante = jogo['Mandante'] == jogador
+
+            try:
+                if eh_mandante:
+                    gols_feitos += int(jogo['Mandante FT']) if jogo['Mandante FT'] not in ['', 'NaN'] else 0
+                    gols_sofridos += int(jogo['Visitante FT']) if jogo['Visitante FT'] not in ['', 'NaN'] else 0
+                else:
+                    gols_feitos += int(jogo['Visitante FT']) if jogo['Visitante FT'] not in ['', 'NaN'] else 0
+                    gols_sofridos += int(jogo['Mandante FT']) if jogo['Mandante FT'] not in ['', 'NaN'] else 0
+            except (ValueError, TypeError):
+                continue
+
+        total_jogos = len(jogos)
+        return {
+            'media_gols_feitos_ft': gols_feitos / total_jogos if total_jogos > 0 else 1.5,
+            'media_gols_sofridos_ft': gols_sofridos / total_jogos if total_jogos > 0 else 1.5
+        }
+
+    def obter_ultimos_jogos_gerais(self, jogador: str, df_resultados: pd.DataFrame, limite: int) -> pd.DataFrame:
+        """Busca últimos jogos gerais"""
+        jogos = df_resultados[
+            (df_resultados['Mandante'] == jogador) |
+            (df_resultados['Visitante'] == jogador)
+            ].sort_values('Data', ascending=False).head(limite)
+        return jogos
+
+    def simular_monte_carlo_avancado(self, lambda_casa: float, lambda_fora: float) -> Dict:
+        """Simulação Monte Carlo completa"""
+
+        resultados = {
+            'over_05_ht': 0, 'over_15_ht': 0, 'over_25_ht': 0,
+            'over_05_ft': 0, 'over_15_ft': 0, 'over_25_ft': 0,
+            'over_35_ft': 0, 'over_45_ft': 0, 'over_55_ft': 0,
+            'btts_ht': 0, 'btts_ft': 0,
+            'vitorias_casa': 0, 'empates': 0, 'vitorias_fora': 0
+        }
+
+        for _ in range(self.num_simulacoes):
+            # Simular gols FT com Poisson
+            gols_casa_ft = np.random.poisson(lambda_casa)
+            gols_fora_ft = np.random.poisson(lambda_fora)
+
+            gols_casa_ft = min(gols_casa_ft, self.max_gols)
+            gols_fora_ft = min(gols_fora_ft, self.max_gols)
+
+            # Simular HT (40% dos gols em média)
+            gols_casa_ht = np.random.binomial(gols_casa_ft, 0.4)
+            gols_fora_ht = np.random.binomial(gols_fora_ft, 0.4)
+
+            # Analisar HT
+            total_ht = gols_casa_ht + gols_fora_ht
+            if total_ht > 0.5: resultados['over_05_ht'] += 1
+            if total_ht > 1.5: resultados['over_15_ht'] += 1
+            if total_ht > 2.5: resultados['over_25_ht'] += 1
+            if gols_casa_ht > 0 and gols_fora_ht > 0: resultados['btts_ht'] += 1
+
+            # Analisar FT
+            total_ft = gols_casa_ft + gols_fora_ft
+            if total_ft > 0.5: resultados['over_05_ft'] += 1
+            if total_ft > 1.5: resultados['over_15_ft'] += 1
+            if total_ft > 2.5: resultados['over_25_ft'] += 1
+            if total_ft > 3.5: resultados['over_35_ft'] += 1
+            if total_ft > 4.5: resultados['over_45_ft'] += 1
+            if total_ft > 5.5: resultados['over_55_ft'] += 1
+            if gols_casa_ft > 0 and gols_fora_ft > 0: resultados['btts_ft'] += 1
+
+            # Resultado final
+            if gols_casa_ft > gols_fora_ft:
+                resultados['vitorias_casa'] += 1
+            elif gols_casa_ft == gols_fora_ft:
+                resultados['empates'] += 1
+            else:
+                resultados['vitorias_fora'] += 1
+
+        return self._calcular_probabilidades_finais(resultados)
+
+    def _calcular_probabilidades_finais(self, resultados: Dict) -> Dict:
+        """Calcula probabilidades finais"""
+        total = self.num_simulacoes
+
+        return {
+            'over_05_ht': (resultados['over_05_ht'] / total) * 100,
+            'over_15_ht': (resultados['over_15_ht'] / total) * 100,
+            'over_25_ht': (resultados['over_25_ht'] / total) * 100,
+            'over_05_ft': (resultados['over_05_ft'] / total) * 100,
+            'over_15_ft': (resultados['over_15_ft'] / total) * 100,
+            'over_25_ft': (resultados['over_25_ft'] / total) * 100,
+            'over_35_ft': (resultados['over_35_ft'] / total) * 100,
+            'over_45_ft': (resultados['over_45_ft'] / total) * 100,
+            'over_55_ft': (resultados['over_55_ft'] / total) * 100,
+            'btts_ht': (resultados['btts_ht'] / total) * 100,
+            'btts_ft': (resultados['btts_ft'] / total) * 100,
+            'casa_vence': (resultados['vitorias_casa'] / total) * 100,
+            'empate': (resultados['empates'] / total) * 100,
+            'fora_vence': (resultados['vitorias_fora'] / total) * 100
+        }
+
+
+# FUNÇÕES AUXILIARES
+def obter_confrontos_diretos(jogador1: str, jogador2: str, df_resultados: pd.DataFrame,
+                             limite: int = 5) -> pd.DataFrame:
+    """Busca últimos confrontos diretos entre dois jogadores"""
+    confrontos = df_resultados[
+        ((df_resultados['Mandante'] == jogador1) & (df_resultados['Visitante'] == jogador2)) |
+        ((df_resultados['Mandante'] == jogador2) & (df_resultados['Visitante'] == jogador1))
+        ].sort_values('Data', ascending=False).head(limite)
+    return confrontos
+
+
+def obter_ultimos_jogos_gerais(jogador: str, df_resultados: pd.DataFrame, limite: int = 10,
+                               excluir: pd.DataFrame = None) -> pd.DataFrame:
+    """Busca últimos jogos gerais excluindo confrontos já considerados"""
+    todos_jogos = df_resultados[
+        (df_resultados['Mandante'] == jogador) |
+        (df_resultados['Visitante'] == jogador)
+        ].sort_values('Data', ascending=False)
+
+    if excluir is not None and not excluir.empty:
+        mask = ~todos_jogos.index.isin(excluir.index)
+        todos_jogos = todos_jogos[mask]
+
+    return todos_jogos.head(limite)
+
+
+def calcular_estatisticas_jogador(jogador: str, jogos: pd.DataFrame) -> Dict:
+    """Calcula estatísticas básicas do jogador"""
+    if jogos.empty:
+        return {
+            'vitorias': 0, 'empates': 0, 'derrotas': 0,
+            'forma': 0, 'record': "0-0-0", 'forma_emoji': "⚡0%"
+        }
+
+    vitorias = empates = derrotas = 0
+
+    for _, jogo in jogos.iterrows():
+        eh_mandante = jogo['Mandante'] == jogador
+
+        try:
+            if eh_mandante:
+                gols_feito = int(jogo['Mandante FT']) if jogo['Mandante FT'] not in ['', 'NaN', None] else 0
+                gols_sofrido = int(jogo['Visitante FT']) if jogo['Visitante FT'] not in ['', 'NaN', None] else 0
+            else:
+                gols_feito = int(jogo['Visitante FT']) if jogo['Visitante FT'] not in ['', 'NaN', None] else 0
+                gols_sofrido = int(jogo['Mandante FT']) if jogo['Mandante FT'] not in ['', 'NaN', None] else 0
+
+            if gols_feito > gols_sofrido:
+                vitorias += 1
+            elif gols_feito == gols_sofrido:
+                empates += 1
+            else:
+                derrotas += 1
+
+        except (ValueError, TypeError):
+            continue
+
+    total_jogos = len(jogos)
+    forma = (vitorias / total_jogos * 100) if total_jogos > 0 else 0
+
+    # ✅ GARANTIR QUE TODAS AS CHAVES ESTEJAM SEMPRE PRESENTES
+    return {
+        'vitorias': vitorias,
+        'empates': empates,
+        'derrotas': derrotas,
+        'forma': forma,
+        'record': f"{vitorias}-{empates}-{derrotas}",
+        'forma_emoji': f"⚡{forma:.0f}%"
+    }
+
+
+def identificar_valor_aposta(previsao: Dict, confianca: float) -> str:
+    """Identifica oportunidades de valor"""
+    if confianca < 70:
+        return ""
+
+    if (previsao['over_25_ft'] > 70 and
+            previsao['btts_ft'] > 65 and
+            confianca > 85):
+        return "💎"
+    elif (previsao['over_25_ft'] > 65 or
+          previsao['btts_ft'] > 60) and confianca > 75:
+        return "🔶"
+    else:
+        return ""
+
+
+def calcular_confianca(confrontos: pd.DataFrame, forma_casa: pd.DataFrame, forma_fora: pd.DataFrame) -> float:
+    """Calcula confiança baseada na qualidade dos dados"""
+    confianca = 50  # Base
+
+    # Bônus por confrontos diretos
+    if len(confrontos) >= 3:
+        confianca += 20
+    elif len(confrontos) >= 1:
+        confianca += 10
+
+    # Bônus por forma recente
+    if len(forma_casa) >= 8 and len(forma_fora) >= 8:
+        confianca += 20
+    elif len(forma_casa) >= 5 and len(forma_fora) >= 5:
+        confianca += 10
+
+    return min(95, confianca)
+
+
+def formatar_porcentagem(valor: float) -> str:
+    """Formata porcentagem com cor"""
+    if valor >= 70:
+        return f"🟢 {valor:.1f}%"
+    elif valor >= 55:
+        return f"🟡 {valor:.1f}%"
+    else:
+        return f"🔴 {valor:.1f}%"
+
+
+# FUNÇÕES ORIGINAIS DO SEU CÓDIGO (mantidas intactas)
 @st.cache_data(show_spinner=False, ttl=300)
 def scrape_page(url: str) -> list[list[str]]:
     resp = requests.get(url, headers=HEADERS, timeout=15)
@@ -121,295 +389,93 @@ def scrape_resultados() -> pd.DataFrame:
     return df
 
 
-def calcular_estatisticas_jogador(jogador: str, df_resultados: pd.DataFrame, adversario: str = None) -> Dict:
-    """Calcula estatísticas para um jogador considerando confrontos diretos e últimos jogos"""
+def aplicar_previsoes_avancadas(df_live: pd.DataFrame, df_resultados: pd.DataFrame) -> pd.DataFrame:
+    """Aplica previsões Poisson + Monte Carlo aos dados ao vivo"""
+    if df_live.empty:
+        return df_live
 
-    # Filtrar jogos onde o jogador participou (como mandante ou visitante)
-    mask_mandante = df_resultados['Mandante'] == jogador
-    mask_visitante = df_resultados['Visitante'] == jogador
-    jogos_jogador = df_resultados[mask_mandante | mask_visitante].copy()
+    # Inicializar predictor
+    predictor = PoissonMonteCarloPredictor(num_simulacoes=5000)
 
-    if jogos_jogador.empty:
-        return {
-            'vitorias_ht': 0, 'empates_ht': 0, 'derrotas_ht': 0,
-            'gols_marcados_ht': 0, 'gols_sofridos_ht': 0,
-            'vitorias_ft': 0, 'empates_ft': 0, 'derrotas_ft': 0,
-            'gols_marcados_ft': 0, 'gols_sofridos_ft': 0,
-            'total_jogos': 0,
-            'media_gols_ht': 0.0, 'media_gols_ft': 0.0,
-            'over_05_ht': 0, 'over_15_ht': 0, 'over_25_ht': 0,
-            'over_05_ft': 0, 'over_15_ft': 0, 'over_25_ft': 0,
-            'over_35_ft': 0, 'over_45_ft': 0, 'over_55_ft': 0,
-            'btts_ht': 0, 'btts_ft': 0
-        }
-
-    # Ordenar por data (assumindo que a coluna Data existe)
-    if 'Data' in jogos_jogador.columns:
-        jogos_jogador = jogos_jogador.sort_values('Data', ascending=False)
-
-    # Separar confrontos diretos se adversário for especificado
-    confrontos_diretos = pd.DataFrame()
-    if adversario:
-        mask_confronto_mandante = (df_resultados['Mandante'] == jogador) & (df_resultados['Visitante'] == adversario)
-        mask_confronto_visitante = (df_resultados['Mandante'] == adversario) & (df_resultados['Visitante'] == jogador)
-        confrontos_diretos = df_resultados[mask_confronto_mandante | mask_confronto_visitante].head(5)
-
-    # Últimos 10 jogos gerais (excluindo confrontos diretos já considerados)
-    jogos_gerais = jogos_jogador
-    if not confrontos_diretos.empty:
-        # Remover confrontos diretos dos jogos gerais para não duplicar
-        mask = ~jogos_jogador.index.isin(confrontos_diretos.index)
-        jogos_gerais = jogos_jogador[mask]
-
-    jogos_gerais = jogos_gerais.head(10)  # Últimos 10 jogos gerais
-
-    # Combinar todos os jogos (confrontos diretos + jogos gerais)
-    todos_jogos = pd.concat([confrontos_diretos, jogos_gerais]).drop_duplicates().head(15)
-
-    if todos_jogos.empty:
-        return {
-            'vitorias_ht': 0, 'empates_ht': 0, 'derrotas_ht': 0,
-            'gols_marcados_ht': 0, 'gols_sofridos_ht': 0,
-            'vitorias_ft': 0, 'empates_ft': 0, 'derrotas_ft': 0,
-            'gols_marcados_ft': 0, 'gols_sofridos_ft': 0,
-            'total_jogos': 0,
-            'media_gols_ht': 0.0, 'media_gols_ft': 0.0,
-            'over_05_ht': 0, 'over_15_ht': 0, 'over_25_ht': 0,
-            'over_05_ft': 0, 'over_15_ft': 0, 'over_25_ft': 0,
-            'over_35_ft': 0, 'over_45_ft': 0, 'over_55_ft': 0,
-            'btts_ht': 0, 'btts_ft': 0
-        }
-
-    # Inicializar contadores
-    vitorias_ht = empates_ht = derrotas_ht = 0
-    gols_marcados_ht = gols_sofridos_ht = 0
-    vitorias_ft = empates_ft = derrotas_ft = 0
-    gols_marcados_ft = gols_sofridos_ft = 0
-
-    over_05_ht = over_15_ht = over_25_ht = 0
-    over_05_ft = over_15_ft = over_25_ft = over_35_ft = over_45_ft = over_55_ft = 0
-    btts_ht = btts_ft = 0
-
-    for _, jogo in todos_jogos.iterrows():
-        # Verificar se o jogador é mandante ou visitante
-        eh_mandante = jogo['Mandante'] == jogador
-
-        # Dados do HT
-        if 'Mandante HT' in jogo and 'Visitante HT' in jogo:
-            try:
-                gols_mandante_ht = int(jogo['Mandante HT']) if jogo['Mandante HT'] not in ['', 'NaN'] else 0
-                gols_visitante_ht = int(jogo['Visitante HT']) if jogo['Visitante HT'] not in ['', 'NaN'] else 0
-                total_gols_ht = gols_mandante_ht + gols_visitante_ht
-
-                # Contar Overs HT
-                if total_gols_ht > 0.5: over_05_ht += 1
-                if total_gols_ht > 1.5: over_15_ht += 1
-                if total_gols_ht > 2.5: over_25_ht += 1
-
-                # Contar BTTS HT (ambos marcaram no HT) - MESMA LÓGICA DOS OVER
-                if gols_mandante_ht > 0 and gols_visitante_ht > 0:
-                    btts_ht += 1
-
-                if eh_mandante:
-                    gols_marcados_ht += gols_mandante_ht
-                    gols_sofridos_ht += gols_visitante_ht
-
-                    if gols_mandante_ht > gols_visitante_ht:
-                        vitorias_ht += 1
-                    elif gols_mandante_ht == gols_visitante_ht:
-                        empates_ht += 1
-                    else:
-                        derrotas_ht += 1
-                else:
-                    gols_marcados_ht += gols_visitante_ht
-                    gols_sofridos_ht += gols_mandante_ht
-
-                    if gols_visitante_ht > gols_mandante_ht:
-                        vitorias_ht += 1
-                    elif gols_visitante_ht == gols_mandante_ht:
-                        empates_ht += 1
-                    else:
-                        derrotas_ht += 1
-            except (ValueError, TypeError):
-                pass
-
-        # Dados do FT
-        if 'Mandante FT' in jogo and 'Visitante FT' in jogo:
-            try:
-                gols_mandante_ft = int(jogo['Mandante FT']) if jogo['Mandante FT'] not in ['', 'NaN'] else 0
-                gols_visitante_ft = int(jogo['Visitante FT']) if jogo['Visitante FT'] not in ['', 'NaN'] else 0
-                total_gols_ft = gols_mandante_ft + gols_visitante_ft
-
-                # Contar Overs FT
-                if total_gols_ft > 0.5: over_05_ft += 1
-                if total_gols_ft > 1.5: over_15_ft += 1
-                if total_gols_ft > 2.5: over_25_ft += 1
-                if total_gols_ft > 3.5: over_35_ft += 1
-                if total_gols_ft > 4.5: over_45_ft += 1
-                if total_gols_ft > 5.5: over_55_ft += 1
-
-                # Contar BTTS FT (ambos marcaram no FT) - MESMA LÓGICA DOS OVER
-                if gols_mandante_ft > 0 and gols_visitante_ft > 0:
-                    btts_ft += 1
-
-                if eh_mandante:
-                    gols_marcados_ft += gols_mandante_ft
-                    gols_sofridos_ft += gols_visitante_ft
-
-                    if gols_mandante_ft > gols_visitante_ft:
-                        vitorias_ft += 1
-                    elif gols_mandante_ft == gols_visitante_ft:
-                        empates_ft += 1
-                    else:
-                        derrotas_ft += 1
-                else:
-                    gols_marcados_ft += gols_visitante_ft
-                    gols_sofridos_ft += gols_mandante_ft
-
-                    if gols_visitante_ft > gols_mandante_ft:
-                        vitorias_ft += 1
-                    elif gols_visitante_ft == gols_mandante_ft:
-                        empates_ft += 1
-                    else:
-                        derrotas_ft += 1
-            except (ValueError, TypeError):
-                pass
-
-    total_jogos = len(todos_jogos)
-
-    # Média de gols = (Gols Marcados + Gols Sofridos) / Total de Jogos
-    media_gols_ht = round((gols_marcados_ht + gols_sofridos_ht) / total_jogos, 2) if total_jogos > 0 else 0.0
-    media_gols_ft = round((gols_marcados_ft + gols_sofridos_ft) / total_jogos, 2) if total_jogos > 0 else 0.0
-
-    return {
-        'vitorias_ht': vitorias_ht,
-        'empates_ht': empates_ht,
-        'derrotas_ht': derrotas_ht,
-        'gols_marcados_ht': gols_marcados_ht,
-        'gols_sofridos_ht': gols_sofridos_ht,
-        'media_gols_ht': media_gols_ht,
-
-        'vitorias_ft': vitorias_ft,
-        'empates_ft': empates_ft,
-        'derrotas_ft': derrotas_ft,
-        'gols_marcados_ft': gols_marcados_ft,
-        'gols_sofridos_ft': gols_sofridos_ft,
-        'media_gols_ft': media_gols_ft,
-
-        'total_jogos': total_jogos,
-        'over_05_ht': over_05_ht, 'over_15_ht': over_15_ht, 'over_25_ht': over_25_ht,
-        'over_05_ft': over_05_ft, 'over_15_ft': over_15_ft, 'over_25_ft': over_25_ft,
-        'over_35_ft': over_35_ft, 'over_45_ft': over_45_ft, 'over_55_ft': over_55_ft,
-        'btts_ht': btts_ht, 'btts_ft': btts_ft
-    }
-
-
-def calcular_probabilidades(estat_casa: Dict, estat_fora: Dict, tipo: str = 'ht') -> Tuple[float, float, float]:
-    """Calcula probabilidades para 1X2 baseado nas estatísticas"""
-
-    if tipo == 'ht':
-        vitorias_casa = estat_casa['vitorias_ht']
-        empates_casa = estat_casa['empates_ht']
-        derrotas_casa = estat_casa['derrotas_ht']
-        vitorias_fora = estat_fora['vitorias_ht']
-        empates_fora = estat_fora['empates_ht']
-        derrotas_fora = estat_fora['derrotas_ht']
-    else:  # ft
-        vitorias_casa = estat_casa['vitorias_ft']
-        empates_casa = estat_casa['empates_ft']
-        derrotas_casa = estat_casa['derrotas_ft']
-        vitorias_fora = estat_fora['vitorias_ft']
-        empates_fora = estat_fora['empates_ft']
-        derrotas_fora = estat_fora['derrotas_ft']
-
-    total_casa = vitorias_casa + empates_casa + derrotas_casa
-    total_fora = vitorias_fora + empates_fora + derrotas_fora
-
-    if total_casa == 0 or total_fora == 0:
-        return 0.33, 0.34, 0.33
-
-    # Fórmulas conforme especificado
-    casa_vence = (vitorias_casa + derrotas_fora) / (total_casa + total_fora)
-    fora_vence = (vitorias_fora + derrotas_casa) / (total_casa + total_fora)
-    empate = 1 - (casa_vence + fora_vence)
-
-    # Garantir que as probabilidades somem 1
-    total = casa_vence + empate + fora_vence
-    if total > 0:
-        casa_vence /= total
-        empate /= total
-        fora_vence /= total
-
-    return casa_vence, empate, fora_vence
-
-
-def calcular_overs_combinados(estat_casa: Dict, estat_fora: Dict, total_jogos_combinados: int) -> Dict:
-    """Calcula porcentagens de Over e BTTS combinando dados de casa e fora"""
-
-    if total_jogos_combinados == 0:
-        return {
-            'over_05_ht': 0, 'over_15_ht': 0, 'over_25_ht': 0,
-            'over_05_ft': 0, 'over_15_ft': 0, 'over_25_ft': 0,
-            'over_35_ft': 0, 'over_45_ft': 0, 'over_55_ft': 0,
-            'btts_ht': 0, 'btts_ft': 0
-        }
-
-    # Para Over e BTTS, usamos a mesma lógica: se qualquer um dos dois jogadores teve, conta
-    over_05_ht = (estat_casa['over_05_ht'] + estat_fora['over_05_ht']) / (2 * total_jogos_combinados)
-    over_15_ht = (estat_casa['over_15_ht'] + estat_fora['over_15_ht']) / (2 * total_jogos_combinados)
-    over_25_ht = (estat_casa['over_25_ht'] + estat_fora['over_25_ht']) / (2 * total_jogos_combinados)
-
-    over_05_ft = (estat_casa['over_05_ft'] + estat_fora['over_05_ft']) / (2 * total_jogos_combinados)
-    over_15_ft = (estat_casa['over_15_ft'] + estat_fora['over_15_ft']) / (2 * total_jogos_combinados)
-    over_25_ft = (estat_casa['over_25_ft'] + estat_fora['over_25_ft']) / (2 * total_jogos_combinados)
-    over_35_ft = (estat_casa['over_35_ft'] + estat_fora['over_35_ft']) / (2 * total_jogos_combinados)
-    over_45_ft = (estat_casa['over_45_ft'] + estat_fora['over_45_ft']) / (2 * total_jogos_combinados)
-    over_55_ft = (estat_casa['over_55_ft'] + estat_fora['over_55_ft']) / (2 * total_jogos_combinados)
-
-    # BTTS segue a MESMA lógica dos Over
-    btts_ht = (estat_casa['btts_ht'] + estat_fora['btts_ht']) / (2 * total_jogos_combinados)
-    btts_ft = (estat_casa['btts_ft'] + estat_fora['btts_ft']) / (2 * total_jogos_combinados)
-
-    return {
-        'over_05_ht': round(over_05_ht * 100, 1),
-        'over_15_ht': round(over_15_ht * 100, 1),
-        'over_25_ht': round(over_25_ht * 100, 1),
-        'over_05_ft': round(over_05_ft * 100, 1),
-        'over_15_ft': round(over_15_ft * 100, 1),
-        'over_25_ft': round(over_25_ft * 100, 1),
-        'over_35_ft': round(over_35_ft * 100, 1),
-        'over_45_ft': round(over_45_ft * 100, 1),
-        'over_55_ft': round(over_55_ft * 100, 1),
-        'btts_ht': round(btts_ht * 100, 1),
-        'btts_ft': round(btts_ft * 100, 1)
-    }
-
-
-def formatar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Formata o DataFrame para exibir porcentagens com o símbolo % e gols com 2 casas decimais"""
-    df_formatado = df.copy()
-
-    # Colunas que devem ser formatadas como porcentagem
-    colunas_porcentagem = [
-        'Casa Vence HT', 'Empate HT', 'Fora Vence HT', 'Btts HT',
-        'Casa Vence FT', 'Empate FT', 'Fora Vence FT', 'Btts FT',
-        'Over 0.5 HT', 'Over 1.5 HT', 'Over 2.5 HT',
-        'Over 0.5 FT', 'Over 1.5 FT', 'Over 2.5 FT',
-        'Over 3.5 FT', 'Over 4.5 FT', 'Over 5.5 FT'
+    # CORREÇÃO PRINCIPAL: Definir a ordem EXATA das colunas conforme solicitado
+    ordem_colunas = [
+        'Hora', 'Liga', 'Mandante', 'Visitante',
+        'Casa Vence', 'Empate', 'Fora Vence',
+        'xG Casa', 'xG Fora', 'Valor', 'Confiança',
+        'Over 0.5 HT', 'Over 1.5 HT', 'Over 2.5 HT', 'BTTS HT',
+        'Over 0.5 FT', 'Over 1.5 FT', 'Over 2.5 FT', 'Over 3.5 FT',
+        'Over 4.5 FT', 'Over 5.5 FT', 'BTTS FT'
     ]
 
-    for coluna in colunas_porcentagem:
-        if coluna in df_formatado.columns:
-            df_formatado[coluna] = df_formatado[coluna].apply(lambda x: f"{x}%" if pd.notna(x) else "0%")
+    # Inicializar todas as colunas
+    for coluna in ordem_colunas:
+        if coluna not in df_live.columns:
+            df_live[coluna] = ""
 
-    # Formatar Gols HT e Gols FT com 2 casas decimais
-    if 'Gols HT' in df_formatado.columns:
-        df_formatado['Gols HT'] = df_formatado['Gols HT'].apply(lambda x: f"{float(x):.2f}" if pd.notna(x) else "0.00")
+    # Calcular previsões para cada partida
+    for idx, row in df_live.iterrows():
+        casa = row['Mandante']
+        fora = row['Visitante']
 
-    if 'Gols FT' in df_formatado.columns:
-        df_formatado['Gols FT'] = df_formatado['Gols FT'].apply(lambda x: f"{float(x):.2f}" if pd.notna(x) else "0.00")
+        if casa and fora:
+            try:
+                # Buscar dados focados da aba Resultados
+                confrontos = obter_confrontos_diretos(casa, fora, df_resultados, 5)
+                forma_casa = obter_ultimos_jogos_gerais(casa, df_resultados, 10, confrontos)
+                forma_fora = obter_ultimos_jogos_gerais(fora, df_resultados, 10, confrontos)
 
-    return df_formatado
+                # Calcular estatísticas dos jogadores
+                estat_casa = calcular_estatisticas_jogador(casa, forma_casa)
+                estat_fora = calcular_estatisticas_jogador(fora, forma_fora)
+
+                # Calcular lambda Poisson
+                lambda_casa = predictor.calcular_lambda_ponderado(casa, confrontos, forma_casa, df_resultados)
+                lambda_fora = predictor.calcular_lambda_ponderado(fora, confrontos, forma_fora, df_resultados)
+
+                # Simular Monte Carlo
+                simulacoes = predictor.simular_monte_carlo_avancado(lambda_casa, lambda_fora)
+
+                # Calcular confiança e valor
+                confianca = calcular_confianca(confrontos, forma_casa, forma_fora)
+                valor = identificar_valor_aposta(simulacoes, confianca)
+
+                # Preencher dados principais
+                df_live.at[idx, 'Mandante'] = f"{casa} ({estat_casa['record']}) {estat_casa['forma_emoji']}"
+                df_live.at[idx, 'Visitante'] = f"{fora} ({estat_fora['record']}) {estat_fora['forma_emoji']}"
+                df_live.at[idx, 'xG Casa'] = f"{lambda_casa:.1f}"
+                df_live.at[idx, 'xG Fora'] = f"{lambda_fora:.1f}"
+                df_live.at[idx, 'Valor'] = valor
+                df_live.at[idx, 'Confiança'] = f"{confianca:.0f}%"
+
+                # Preencher colunas de resultados
+                df_live.at[idx, 'Casa Vence'] = formatar_porcentagem(simulacoes['casa_vence'])
+                df_live.at[idx, 'Empate'] = formatar_porcentagem(simulacoes['empate'])
+                df_live.at[idx, 'Fora Vence'] = formatar_porcentagem(simulacoes['fora_vence'])
+                df_live.at[idx, 'Over 0.5 HT'] = formatar_porcentagem(simulacoes['over_05_ht'])
+                df_live.at[idx, 'Over 1.5 HT'] = formatar_porcentagem(simulacoes['over_15_ht'])
+                df_live.at[idx, 'Over 2.5 HT'] = formatar_porcentagem(simulacoes['over_25_ht'])
+                df_live.at[idx, 'BTTS HT'] = formatar_porcentagem(simulacoes['btts_ht'])
+                df_live.at[idx, 'Over 0.5 FT'] = formatar_porcentagem(simulacoes['over_05_ft'])
+                df_live.at[idx, 'Over 1.5 FT'] = formatar_porcentagem(simulacoes['over_15_ft'])
+                df_live.at[idx, 'Over 2.5 FT'] = formatar_porcentagem(simulacoes['over_25_ft'])
+                df_live.at[idx, 'Over 3.5 FT'] = formatar_porcentagem(simulacoes['over_35_ft'])
+                df_live.at[idx, 'Over 4.5 FT'] = formatar_porcentagem(simulacoes['over_45_ft'])
+                df_live.at[idx, 'Over 5.5 FT'] = formatar_porcentagem(simulacoes['over_55_ft'])
+                df_live.at[idx, 'BTTS FT'] = formatar_porcentagem(simulacoes['btts_ft'])
+
+            except Exception as e:
+                print(f"Erro ao processar {casa} vs {fora}: {e}")
+                # Preencher com valores padrão em caso de erro
+                df_live.at[idx, 'Confiança'] = "0%"
+                continue
+
+    # CORREÇÃO FINAL: Garantir a ordem exata das colunas e incluir quaisquer colunas extras
+    colunas_existentes = [col for col in ordem_colunas if col in df_live.columns]
+    colunas_restantes = [col for col in df_live.columns if col not in ordem_colunas]
+
+    df_live = df_live[colunas_existentes + colunas_restantes]
+
+    return df_live
 
 
 def load_data() -> pd.DataFrame:
@@ -435,7 +501,7 @@ def load_data() -> pd.DataFrame:
         m = re.search(r'\(([^)]+)\).*?x.*?\(([^)]+)\)', clean)
         return (m.group(1).strip(), m.group(2).strip()) if m else ("", "")
 
-    df[['Casa', 'Fora']] = df['Confronto'].apply(lambda x: pd.Series(players(x)))
+    df[['Mandante', 'Visitante']] = df['Confronto'].apply(lambda x: pd.Series(players(x)))
     df = df.drop(columns=['Confronto'])
 
     liga_map_ao_vivo = {
@@ -446,88 +512,9 @@ def load_data() -> pd.DataFrame:
     }
     df['Liga'] = df['Liga'].replace(liga_map_ao_vivo)
 
-    # Obter dados de resultados para calcular estatísticas
-    df_resultados = scrape_resultados()
-
-    # Criar colunas vazias para as estatísticas
-    colunas_novas = [
-        'Casa Vence HT', 'Empate HT', 'Fora Vence HT', 'Btts HT',
-        'Casa Vence FT', 'Empate FT', 'Fora Vence FT', 'Btts FT',
-        'Gols HT', 'Gols FT',
-        'Over 0.5 HT', 'Over 1.5 HT', 'Over 2.5 HT',
-        'Over 0.5 FT', 'Over 1.5 FT', 'Over 2.5 FT',
-        'Over 3.5 FT', 'Over 4.5 FT', 'Over 5.5 FT'
-    ]
-
-    for coluna in colunas_novas:
-        if 'Over' in coluna or 'Gols' in coluna or 'Btts' in coluna:
-            df[coluna] = 0.0
-        else:
-            df[coluna] = 0.0
-
-    # Calcular estatísticas para cada partida
-    for idx, row in df.iterrows():
-        casa = row['Casa']
-        fora = row['Fora']
-
-        if casa and fora:
-            # Calcular estatísticas considerando confrontos diretos
-            estat_casa = calcular_estatisticas_jogador(casa, df_resultados, fora)
-            estat_fora = calcular_estatisticas_jogador(fora, df_resultados, casa)
-
-            # Calcular probabilidades
-            casa_vence_ht, empate_ht, fora_vence_ht = calcular_probabilidades(estat_casa, estat_fora, 'ht')
-            casa_vence_ft, empate_ft, fora_vence_ft = calcular_probabilidades(estat_casa, estat_fora, 'ft')
-
-            # Calcular médias de gols combinadas com 2 casas decimais
-            gols_ht = round((estat_casa['media_gols_ht'] + estat_fora['media_gols_ht']) / 2, 2)
-            gols_ft = round((estat_casa['media_gols_ft'] + estat_fora['media_gols_ft']) / 2, 2)
-
-            # Calcular Overs e BTTS combinados
-            total_jogos_combinados = max(estat_casa['total_jogos'], estat_fora['total_jogos'])
-            estatisticas = calcular_overs_combinados(estat_casa, estat_fora, total_jogos_combinados)
-
-            # Preencher dados
-            df.at[idx, 'Casa Vence HT'] = round(casa_vence_ht * 100, 1)
-            df.at[idx, 'Empate HT'] = round(empate_ht * 100, 1)
-            df.at[idx, 'Fora Vence HT'] = round(fora_vence_ht * 100, 1)
-            df.at[idx, 'Btts HT'] = estatisticas['btts_ht']
-
-            df.at[idx, 'Casa Vence FT'] = round(casa_vence_ft * 100, 1)
-            df.at[idx, 'Empate FT'] = round(empate_ft * 100, 1)
-            df.at[idx, 'Fora Vence FT'] = round(fora_vence_ft * 100, 1)
-            df.at[idx, 'Btts FT'] = estatisticas['btts_ft']
-
-            # Garantir 2 casas decimais para Gols HT e Gols FT
-            df.at[idx, 'Gols HT'] = gols_ht
-            df.at[idx, 'Gols FT'] = gols_ft
-
-            # Preencher Overs
-            df.at[idx, 'Over 0.5 HT'] = estatisticas['over_05_ht']
-            df.at[idx, 'Over 1.5 HT'] = estatisticas['over_15_ht']
-            df.at[idx, 'Over 2.5 HT'] = estatisticas['over_25_ht']
-
-            df.at[idx, 'Over 0.5 FT'] = estatisticas['over_05_ft']
-            df.at[idx, 'Over 1.5 FT'] = estatisticas['over_15_ft']
-            df.at[idx, 'Over 2.5 FT'] = estatisticas['over_25_ft']
-            df.at[idx, 'Over 3.5 FT'] = estatisticas['over_35_ft']
-            df.at[idx, 'Over 4.5 FT'] = estatisticas['over_45_ft']
-            df.at[idx, 'Over 5.5 FT'] = estatisticas['over_55_ft']
-
-    # Ordem das colunas conforme solicitado
-    ordem_colunas = [
-        'Hora', 'Liga', 'Casa', 'Fora',
-        'Casa Vence HT', 'Empate HT', 'Fora Vence HT', 'Btts HT',
-        'Casa Vence FT', 'Empate FT', 'Fora Vence FT', 'Btts FT',
-        'Gols HT', 'Over 0.5 HT', 'Over 1.5 HT', 'Over 2.5 HT',
-        'Gols FT', 'Over 0.5 FT', 'Over 1.5 FT', 'Over 2.5 FT',
-        'Over 3.5 FT', 'Over 4.5 FT', 'Over 5.5 FT'
-    ]
-
-    df = df[ordem_colunas + [c for c in df.columns if c not in ordem_colunas]]
-
-    # Formatar o DataFrame antes de retornar
-    return formatar_dataframe(df)
+    ordem = ['Hora', 'Liga', 'Mandante', 'Visitante']
+    df = df[ordem + [c for c in df.columns if c not in ordem]]
+    return df
 
 
 @st.cache_data(show_spinner=False, ttl=300)
@@ -540,45 +527,35 @@ def scrape_resultados_with_update(update_param: int) -> pd.DataFrame:
     return scrape_resultados()
 
 
-def aplicar_filtros(df: pd.DataFrame, liga_selecionada: str, over_tipo: str, over_valor: float,
-                    porcentagem_minima: float) -> pd.DataFrame:
-    """Aplica os filtros selecionados ao DataFrame"""
+def aplicar_filtros(df: pd.DataFrame, liga_selecionada: str, filtro_valor: str, confianca_minima: int) -> pd.DataFrame:
+    """Aplica filtros ao DataFrame"""
     df_filtrado = df.copy()
 
     # Filtro por Liga
     if liga_selecionada != "Todas":
         df_filtrado = df_filtrado[df_filtrado['Liga'] == liga_selecionada]
 
-    # Converter colunas de porcentagem para valores numéricos para filtragem
-    colunas_numericas = [
-        'Casa Vence HT', 'Empate HT', 'Fora Vence HT', 'Btts HT',
-        'Casa Vence FT', 'Empate FT', 'Fora Vence FT', 'Btts FT',
-        'Over 0.5 HT', 'Over 1.5 HT', 'Over 2.5 HT',
-        'Over 0.5 FT', 'Over 1.5 FT', 'Over 2.5 FT',
-        'Over 3.5 FT', 'Over 4.5 FT', 'Over 5.5 FT'
-    ]
+    # Filtro por Valor
+    if filtro_valor == "Apenas 💎 Diamante":
+        df_filtrado = df_filtrado[df_filtrado['Valor'] == "💎"]
+    elif filtro_valor == "💎 Diamante + 🔶 Laranja":
+        df_filtrado = df_filtrado[df_filtrado['Valor'].isin(["💎", "🔶"])]
 
-    for coluna in colunas_numericas:
-        if coluna in df_filtrado.columns:
-            df_filtrado[coluna] = df_filtrado[coluna].str.replace('%', '').astype(float)
+    # Filtro por Confiança
+    if confianca_minima > 0:
+        # Criar coluna temporária com tratamento de erros
+        confianca_numerica = []
+        for conf in df_filtrado['Confiança']:
+            try:
+                if conf and str(conf).strip() != '':
+                    valor = float(str(conf).replace('%', '').strip())
+                else:
+                    valor = 0.0
+            except (ValueError, AttributeError):
+                valor = 0.0
+            confianca_numerica.append(valor)
 
-    # Filtro por Over
-    if over_tipo != "Nenhum":
-        df_filtrado = df_filtrado[df_filtrado[over_tipo] >= over_valor]
-
-    # Filtro por Porcentagem Mínima
-    if porcentagem_minima > 0:
-        # Criar uma máscara para qualquer coluna de porcentagem que atinja o mínimo
-        mask = False
-        for coluna in colunas_numericas:
-            if coluna in df_filtrado.columns:
-                mask = mask | (df_filtrado[coluna] >= porcentagem_minima)
-        df_filtrado = df_filtrado[mask]
-
-    # Converter de volta para formato com %
-    for coluna in colunas_numericas:
-        if coluna in df_filtrado.columns:
-            df_filtrado[coluna] = df_filtrado[coluna].apply(lambda x: f"{x}%")
+        df_filtrado = df_filtrado[pd.Series(confianca_numerica) >= confianca_minima]
 
     return df_filtrado
 
@@ -590,7 +567,7 @@ def main() -> None:
     with col1:
         st.markdown("## 🤖")
     with col2:
-        st.markdown("## Simulador FIFA")
+        st.markdown("## Simulador FIFA - Previsões Avançadas")
 
     st.markdown("""
     <div style="
@@ -602,100 +579,116 @@ def main() -> None:
         margin-bottom: 20px;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
     ">
-        <h3 style="margin: 0; font-weight: 600;">🎮 Competições E-Soccer em Tempo Real 🎮</h3>
-        <p style="margin: 10px 0 0 0; opacity: 0.9;">Dados atualizados automaticamente das principais ligas virtuais</p>
+        <h3 style="margin: 0; font-weight: 600;">🎮 Sistema Poisson + Monte Carlo 🎮</h3>
+        <p style="margin: 10px 0 0 0; opacity: 0.9;">Previsões baseadas em confrontos diretos + forma recente</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # Atualiza a página automaticamente a cada 5 minutos (300 segundos)
-    count = st_autorefresh(interval=300000, limit=None, key="auto_refresh")
+    # Atualiza a página automaticamente a cada 60 segundos
+    count = st_autorefresh(interval=60000, limit=None, key="auto_refresh")
 
     # Botão para atualizar manualmente
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        atualizar = st.button("🔄 Atualizar Dados Agora", use_container_width=True)
+    atualizar = st.button("🔄 Atualizar Dados")
 
     # Parâmetro para invalidar cache: 1 se atualizar manual, senão count da auto atualização
     update_param = 1 if atualizar else count
 
-    tab1, tab2 = st.tabs(["🎯 Ao Vivo", "📊 Resultados"])
+    tab1, tab2 = st.tabs(["🎯 Ao Vivo - Previsões", "📊 Resultados"])
 
     with tab1:
-        st.markdown("### Partidas Ao Vivo")
+        st.markdown("### 🎯 Partidas Ao Vivo - Previsões Avançadas")
 
-        # Carregar dados
-        with st.spinner("Carregando dados ao vivo…"):
+        with st.spinner("Carregando dados ao vivo e aplicando previsões…"):
             df_live = load_data_with_update(update_param)
+            df_resultados = scrape_resultados_with_update(update_param)
 
-        if not df_live.empty:
+            # APLICAR PREVISÕES AVANÇADAS
+            df_live_com_previsoes = aplicar_previsoes_avancadas(df_live, df_resultados)
+
+        st.success(f"{len(df_live_com_previsoes)} partidas ao vivo encontradas.")
+
+        if not df_live_com_previsoes.empty:
             # Filtros
             st.markdown("---")
-            st.markdown("#### 🔍 Filtros")
+            st.markdown("#### 🔍 Filtros Inteligentes")
 
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3 = st.columns(3)
 
             with col1:
-                ligas_disponiveis = ["Todas"] + sorted(df_live['Liga'].unique().tolist())
+                ligas_disponiveis = ["Todas"] + sorted(df_live_com_previsoes['Liga'].unique().tolist())
                 liga_selecionada = st.selectbox("Liga", ligas_disponiveis)
 
             with col2:
-                opcoes_over = [
-                    "Nenhum", "Over 0.5 HT", "Over 1.5 HT", "Over 2.5 HT",
-                    "Over 0.5 FT", "Over 1.5 FT", "Over 2.5 FT",
-                    "Over 3.5 FT", "Over 4.5 FT", "Over 5.5 FT"
+                opcoes_valor = [
+                    "Todas as Partidas",
+                    "Apenas 💎 Diamante",
+                    "💎 Diamante + 🔶 Laranja"
                 ]
-                over_tipo = st.selectbox("Over Gols", opcoes_over)
+                filtro_valor = st.selectbox("Oportunidades", opcoes_valor)
 
             with col3:
-                over_valor = st.slider("% Mínima Over", 0, 100, 70, help="Porcentagem mínima para o Over selecionado")
-
-            with col4:
-                porcentagem_minima = st.slider("% Mínima Geral", 0, 100, 0,
-                                               help="Porcentagem mínima em qualquer coluna")
+                confianca_minima = st.slider("Confiança Mínima", 0, 95, 70)
 
             # Aplicar filtros
-            df_filtrado = aplicar_filtros(df_live, liga_selecionada, over_tipo, over_valor, porcentagem_minima)
+            df_filtrado = aplicar_filtros(df_live_com_previsoes, liga_selecionada, filtro_valor, confianca_minima)
 
-            st.success(f"**{len(df_filtrado)}** partidas encontradas (de {len(df_live)} totais)")
+            st.success(f"**{len(df_filtrado)}** partidas filtradas")
 
             # Exibir dataframe
             st.dataframe(df_filtrado, use_container_width=True)
 
-            # Estatísticas rápidas
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total de Partidas", len(df_live))
-            with col2:
-                st.metric("Partidas Filtradas", len(df_filtrado))
-            with col3:
-                if len(df_live) > 0:
-                    percentual = (len(df_filtrado) / len(df_live)) * 100
-                    st.metric("Taxa de Filtro", f"{percentual:.1f}%")
+            # Estatísticas
+            if not df_filtrado.empty:
+                st.markdown("#### 📊 Estatísticas das Previsões")
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    oportunidades_diamante = len(df_filtrado[df_filtrado['Valor'] == "💎"])
+                    st.metric("Oportunidades 💎", oportunidades_diamante)
+
+                with col2:
+                    # Calcular confiança média com tratamento de erro
+                    confiancas = []
+                    for conf in df_filtrado['Confiança']:
+                        try:
+                            if conf and str(conf).strip() != '':
+                                valor = float(str(conf).replace('%', '').strip())
+                                confiancas.append(valor)
+                        except:
+                            continue
+                    avg_confianca = np.mean(confiancas) if confiancas else 0
+                    st.metric("Confiança Média", f"{avg_confianca:.1f}%")
+
+                with col3:
+                    # Extrair porcentagem de Over 2.5 com tratamento de erro
+                    over_25_values = []
+                    for over in df_filtrado['Over 2.5 FT']:
+                        try:
+                            if over and '🟢' in over or '🟡' in over or '🔴' in over:
+                                valor = float(re.findall(r'([\d.]+)%', over)[0])
+                                over_25_values.append(valor)
+                        except:
+                            continue
+                    avg_over_25 = np.mean(over_25_values) if over_25_values else 0
+                    st.metric("Avg Over 2.5", f"{avg_over_25:.1f}%")
+
+                with col4:
+                    st.metric("Simulações/Partida", "5,000")
         else:
             st.info("Nenhuma partida ao vivo encontrada no momento.")
 
     with tab2:
-        st.markdown("### Resultados Recentes")
+        st.markdown("### 📊 Resultados Recentes")
         with st.spinner("Carregando resultados…"):
             df_res = scrape_resultados_with_update(update_param)
 
-        st.success(f"**{len(df_res)}** linhas de resultados encontradas.")
+        st.success(f"{len(df_res)} linhas de resultados encontradas.")
         if not df_res.empty:
             st.dataframe(df_res, use_container_width=True)
-
-            # Estatísticas dos resultados
-            if 'Liga' in df_res.columns:
-                st.markdown("#### 📈 Estatísticas por Liga")
-                stats_liga = df_res['Liga'].value_counts()
-                col1, col2, col3, col4 = st.columns(4)
-                for i, (liga, count) in enumerate(stats_liga.items()):
-                    with [col1, col2, col3, col4][i % 4]:
-                        st.metric(liga, count)
         else:
             st.info("Nenhum resultado encontrado.")
 
-    st.caption(
-        "🔄 Atualização automática a cada 5 minutos | Dependências: requests • pandas • beautifulsoup4 • lxml • streamlit • streamlit-autorefresh")
+    st.caption("🎯 Poisson + Monte Carlo | ⚡ Confrontos Diretos + Forma Recente | 🔄 Atualização automática")
 
 
 if __name__ == "__main__":
