@@ -6,3 +6,4 @@ requests
 openpyxl
 scipy
 scikit-learn
+beautifulsoup4
