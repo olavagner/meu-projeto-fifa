@@ -7,3 +7,4 @@ openpyxl
 scipy
 scikit-learn
 beautifulsoup4
+streamlit-autorefresh
