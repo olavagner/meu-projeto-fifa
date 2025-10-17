@@ -98,6 +98,14 @@ st.markdown("""
     .stSelectbox > div > div:hover {
         border-color: #60A5FA;
     }
+
+    /* Estilo para o Radar FIFA */
+    .radar-table {
+        background: linear-gradient(135deg, #1a1a3e 0%, #0f0f2e 100%);
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -357,6 +365,21 @@ def formatar_porcentagem(valor: float) -> str:
         return f"🔴 {valor:.1f}%"
 
 
+def formatar_porcentagem_sem_icone(valor: float) -> str:
+    """Formata porcentagem SEM ícones (para Casa Vence/Empate/Fora Vence)"""
+    return f"{valor:.1f}%"
+
+
+def formatar_porcentagem_radar(valor: float) -> str:
+    """Formata porcentagem para o Radar FIFA COM ícones"""
+    if valor >= 80:
+        return f"🟢 {valor:.0f}%"
+    elif valor >= 60:
+        return f"🟡 {valor:.0f}%"
+    else:
+        return f"🔴 {valor:.0f}%"
+
+
 def classificar_ht_ft(xg_casa_ht: float, xg_fora_ht: float, xg_casa_ft: float, xg_fora_ft: float) -> Dict:
     """Classifica separadamente HT e FT"""
 
@@ -600,20 +623,20 @@ def aplicar_previsoes_avancadas(df_live: pd.DataFrame, df_resultados: pd.DataFra
                 df_live.at[idx, 'Classificação FT'] = classificacao['classificacao_ft']
                 df_live.at[idx, 'Gols FT'] = f"{classificacao['total_ft']:.2f}"
 
-                # Preencher resultados
-                df_live.at[idx, 'Casa Vence'] = formatar_porcentagem(simulacoes['casa_vence'])
-                df_live.at[idx, 'Empate'] = formatar_porcentagem(simulacoes['empate'])
-                df_live.at[idx, 'Fora Vence'] = formatar_porcentagem(simulacoes['fora_vence'])
+                # Preencher resultados - AGORA SEM ÍCONES para Casa Vence/Empate/Fora Vence
+                df_live.at[idx, 'Casa Vence'] = formatar_porcentagem_sem_icone(simulacoes['casa_vence'])
+                df_live.at[idx, 'Empate'] = formatar_porcentagem_sem_icone(simulacoes['empate'])
+                df_live.at[idx, 'Fora Vence'] = formatar_porcentagem_sem_icone(simulacoes['fora_vence'])
                 df_live.at[idx, 'Valor'] = valor
                 df_live.at[idx, 'Confiança'] = f"{confianca:.0f}%"
 
-                # Preencher probabilidades HT
+                # Preencher probabilidades HT (mantém ícones)
                 df_live.at[idx, 'Over 0.5 HT'] = formatar_porcentagem(simulacoes['over_05_ht'])
                 df_live.at[idx, 'Over 1.5 HT'] = formatar_porcentagem(simulacoes['over_15_ht'])
                 df_live.at[idx, 'Over 2.5 HT'] = formatar_porcentagem(simulacoes['over_25_ht'])
                 df_live.at[idx, 'BTTS HT'] = formatar_porcentagem(simulacoes['btts_ht'])
 
-                # Preencher probabilidades FT
+                # Preencher probabilidades FT (mantém ícones)
                 df_live.at[idx, 'Over 0.5 FT'] = formatar_porcentagem(simulacoes['over_05_ft'])
                 df_live.at[idx, 'Over 1.5 FT'] = formatar_porcentagem(simulacoes['over_15_ft'])
                 df_live.at[idx, 'Over 2.5 FT'] = formatar_porcentagem(simulacoes['over_25_ft'])
@@ -732,12 +755,130 @@ def aplicar_filtros(df: pd.DataFrame, liga_selecionada: str, filtro_valor: str,
     return df_filtrado
 
 
+# ==============================================
+# FUNÇÃO ATUALIZADA: RADAR FIFA CORRIGIDO COM ÍCONES
+# ==============================================
+
+def criar_radar_fifa_corrigido(df_resultados: pd.DataFrame):
+    """Cria o Radar FIFA usando dados históricos REAIS da aba Resultados"""
+
+    st.header("⚡️ Radar FIFA ")
+    st.markdown("⭐️ **Indicador em Tempo Real do Cenario de Cada Liga**")
+
+    if df_resultados.empty:
+        st.info("⏳ Aguardando dados históricos...")
+        return
+
+    # ORDEM ESPECÍFICA SOLICITADA
+    ORDEM_COLUNAS = [
+        'Liga',
+        'Média HT',
+        'Média FT',
+        'Over 0.5 HT',
+        'Over 1.5 HT',
+        'Over 2.5 HT',
+        'Over 0.5 FT',
+        'Over 1.5 FT',
+        'Over 2.5 FT',
+        'Over 3.5 FT',
+        'Over 4.5 FT',
+        'Over 5.5 FT'
+    ]
+
+    # Agrupar por liga e pegar últimos 15 jogos REAIS
+    ligas_unicas = df_resultados['Liga'].unique()
+    resultados_radar = []
+
+    for liga in ligas_unicas:
+        # 🎯 15 JOGOS REAIS da aba Resultados
+        jogos_reais_da_liga = df_resultados[df_resultados['Liga'] == liga].sort_values('Data', ascending=False).head(15)
+        total_jogos = len(jogos_reais_da_liga)
+
+        if total_jogos < 5:  # Mínimo de 5 jogos válidos
+            continue
+
+        # Calcular estatísticas REAIS
+        try:
+            # Médias de gols REAIS
+            media_gols_ht = jogos_reais_da_liga['Total HT'].mean()
+            media_gols_ft = jogos_reais_da_liga['Total FT'].mean()
+
+            # Contar ocorrências REAIS dos mercados
+            over_05_ht = (jogos_reais_da_liga['Total HT'] > 0.5).sum()
+            over_15_ht = (jogos_reais_da_liga['Total HT'] > 1.5).sum()
+            over_25_ht = (jogos_reais_da_liga['Total HT'] > 2.5).sum()
+
+            over_05_ft = (jogos_reais_da_liga['Total FT'] > 0.5).sum()
+            over_15_ft = (jogos_reais_da_liga['Total FT'] > 1.5).sum()
+            over_25_ft = (jogos_reais_da_liga['Total FT'] > 2.5).sum()
+            over_35_ft = (jogos_reais_da_liga['Total FT'] > 3.5).sum()
+            over_45_ft = (jogos_reais_da_liga['Total FT'] > 4.5).sum()
+            over_55_ft = (jogos_reais_da_liga['Total FT'] > 5.5).sum()
+
+        except Exception as e:
+            continue
+
+        # Calcular porcentagens REAIS COM ÍCONES
+        linha_liga = {
+            'Liga': liga,
+            'Média HT': f"{media_gols_ht:.2f}",
+            'Média FT': f"{media_gols_ft:.2f}",
+            'Over 0.5 HT': formatar_porcentagem_radar((over_05_ht / total_jogos) * 100),
+            'Over 1.5 HT': formatar_porcentagem_radar((over_15_ht / total_jogos) * 100),
+            'Over 2.5 HT': formatar_porcentagem_radar((over_25_ht / total_jogos) * 100),
+            'Over 0.5 FT': formatar_porcentagem_radar((over_05_ft / total_jogos) * 100),
+            'Over 1.5 FT': formatar_porcentagem_radar((over_15_ft / total_jogos) * 100),
+            'Over 2.5 FT': formatar_porcentagem_radar((over_25_ft / total_jogos) * 100),
+            'Over 3.5 FT': formatar_porcentagem_radar((over_35_ft / total_jogos) * 100),
+            'Over 4.5 FT': formatar_porcentagem_radar((over_45_ft / total_jogos) * 100),
+            'Over 5.5 FT': formatar_porcentagem_radar((over_55_ft / total_jogos) * 100)
+        }
+
+        resultados_radar.append(linha_liga)
+
+    # Criar DataFrame do Radar
+    if resultados_radar:
+        df_radar = pd.DataFrame(resultados_radar)
+
+        # Limpar DataFrame
+        df_radar = df_radar[df_radar['Liga'].notna()]
+        df_radar = df_radar[df_radar['Liga'] != '']
+
+        # Garantir ordem solicitada
+        colunas_existentes = [col for col in ORDEM_COLUNAS if col in df_radar.columns]
+        df_radar = df_radar[colunas_existentes]
+
+        # Exibir radar
+        st.markdown('<div class="radar-table">', unsafe_allow_html=True)
+        st.dataframe(
+            df_radar,
+            use_container_width=True,
+            height=min(400, 35 * (len(df_radar) + 1))
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Legenda (SEM ESTATÍSTICAS DO RADAR)
+        st.markdown("""
+        **🎯 Legenda do Radar:**
+        - 🟢 **80-100%** - Frequência muito alta
+        - 🟡 **60-79%** - Frequência alta  
+        - 🔴 **0-59%** - Frequência baixa
+        - **Base:** Dados em tempo real
+        - **Dados:** Estatísticas históricas reais
+        """)
+
+    else:
+        st.info("📊 Nenhum dado disponível para o Radar FIFA no momento.")
+
+
 def main() -> None:
     # Header personalizado
     st.markdown("""
     <div class="main-header">
-        <h1 class="main-title">💀 FifaAlgorithm</h1>
-        <p class="main-subtitle">🕊️ “In Memoriam Denise – BET 365"</p>
+        <h1 class="main-title">💀  FifaAlgorithm </h1>
+        <p class="main-subtitle">🦅️ " FifaAlgorithm  , Transformando dados em vantagem competitiva no ESoccer FIFA"
+
+🕊️ *"In Memoriam Denise - BET 365*"</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -752,12 +893,13 @@ def main() -> None:
     # Parâmetro para invalidar cache: 1 se atualizar manual, senão count da auto atualização
     update_param = 1 if atualizar else count
 
-    tab1, tab2 = st.tabs(["⭐️ Ao Vivo - Previsões", "⚽️ Resultados"])
+    # AGORA COM 3 ABAS - ADICIONANDO O RADAR FIFA
+    tab1, tab2, tab3 = st.tabs(["⭐️ Ao Vivo - Previsões", "⚡️ Radar FIFA", "⚽️ Resultados"])
 
     with tab1:
-        st.markdown("###  ⚡️ Sistema Poisson + Monte Carlo para FIFA")
+        st.markdown("###  🌎 API Bet365")
 
-        with st.spinner("Carregando dados ao vivo e aplicando previsões…"):
+        with st.spinner("Carregando dados ao vivo e aplicando previsões..."):
             try:
                 df_live = load_data_with_update(update_param)
                 df_resultados = scrape_resultados_with_update(update_param)
@@ -811,9 +953,14 @@ def main() -> None:
             except Exception as e:
                 st.error(f"💥 Erro crítico no processamento: {e}")
 
-    with tab2:
+    with tab2:  # NOVA ABA RADAR FIFA
+        with st.spinner("Carregando Radar FIFA com dados reais..."):
+            df_resultados = scrape_resultados_with_update(update_param)
+            criar_radar_fifa_corrigido(df_resultados)
+
+    with tab3:
         st.markdown("### ⚽️ Resultados Recentes")
-        with st.spinner("Carregando resultados…"):
+        with st.spinner("Carregando resultados..."):
             df_res = scrape_resultados_with_update(update_param)
 
         if not df_res.empty:
@@ -823,7 +970,7 @@ def main() -> None:
             st.info("📭 Nenhum resultado encontrado.")
 
     st.caption(
-        "🔥 Poisson + Monte Carlo | ⚡ Confrontos Diretos + Forma Recente | 🔄 Atualização automática a cada 5 minutos")
+        "Apresentação gerada pelo sistema FifaAlgorithm - Todos os direitos reservados | DESENVOLVEDOR - VAGNER")
 
 
 if __name__ == "__main__":
